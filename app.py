@@ -1,4 +1,3 @@
-
 from flask import Flask, render_template, request, jsonify
 import yt_dlp
 import os
@@ -9,33 +8,35 @@ import time
 import re
 
 app = Flask(__name__)
-
-# Global progress tracker
 download_progress = {}
 
-# ----------------------------
-# Utility
-# ----------------------------
 def sanitize_filename(filename):
-    """Remove or replace invalid filename characters."""
     return re.sub(r'[<>:"/\\|?*\x00-\x1F]', '', filename).strip().replace(":", "-")
 
-# ----------------------------
-# Routes
-# ----------------------------
+def clean_url(url):
+    if 'list=' in url:
+        return url.split('?')[0]
+    return url
+
 @app.route('/')
 def index():
     return render_template('index.html')
 
 @app.route('/get_video_info', methods=['POST'])
 def get_video_info():
-    """Fetch video metadata and available formats using yt_dlp."""
     try:
-        url = request.json.get('url')
+        url = clean_url(request.json.get('url'))
         if not url:
             return jsonify({'success': False, 'error': 'Missing video URL'})
 
-        ydl_opts = {'quiet': True}
+        ydl_opts = {
+            'quiet': True,
+            'cookies': 'youtube_cookies.txt',
+            'extract_flat': True,
+            'noplaylist': True,
+            'skip_download': True
+        }
+
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             result = ydl.extract_info(url, download=False)
 
@@ -46,13 +47,8 @@ def get_video_info():
                 else "Audio Only" if f.get("acodec") != "none"
                 else "Video Only"
             )
-
             filesize = f.get('filesize') or f.get('filesize_approx')
-            if filesize:
-                filesize_mb = round(filesize / (1024 * 1024), 2)
-                filesize_str = f"{filesize_mb} MB"
-            else:
-                filesize_str = 'N/A'
+            filesize_str = f"{round(filesize / (1024 * 1024), 2)} MB" if filesize else 'N/A'
 
             formats.append({
                 'format_id': f['format_id'],
@@ -73,17 +69,14 @@ def get_video_info():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
-# ----------------------------
-# Progress tracking
-# ----------------------------
 def progress_hook(d, download_id, stream_type):
     if d['status'] == 'downloading':
         total = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
         downloaded = d.get('downloaded_bytes', 0)
         speed = d.get('speed', 0)
         eta = d.get('eta', 0)
-
         percent = (downloaded / total * 100) if total > 0 else 0
+
         download_progress[download_id][stream_type] = {
             'status': 'downloading',
             'percent': round(percent, 1),
@@ -99,17 +92,15 @@ def progress_hook(d, download_id, stream_type):
             'percent': 100
         }
 
-# ----------------------------
-# Download handling
-# ----------------------------
 def download_stream(url, format_spec, stream_type, download_id, output_path):
-    """Download a single stream (video or audio)."""
     try:
         ydl_opts = {
             'format': format_spec,
             'outtmpl': output_path,
             'quiet': True,
             'no_warnings': True,
+            'cookies': 'youtube_cookies.txt',
+            'noplaylist': True,
             'progress_hooks': [lambda d: progress_hook(d, download_id, stream_type)]
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -122,13 +113,12 @@ def download_stream(url, format_spec, stream_type, download_id, output_path):
 
 @app.route('/download', methods=['POST'])
 def download():
-    """Start download (in background thread)."""
     download_id = str(int(time.time() * 1000))
-    data = request.get_json()  # ✅ Copy data before starting thread
+    data = request.get_json()
 
     def download_task():
         try:
-            url = data.get('url')
+            url = clean_url(data.get('url'))
             format_id = data.get('format_id')
             format_type = data.get('format_type')
             title = sanitize_filename(data.get('title', 'video'))
@@ -146,17 +136,15 @@ def download():
             save_path = custom_path if custom_path else '.'
             os.makedirs(save_path, exist_ok=True)
 
-            # Initialize progress states
             download_progress[download_id] = {
                 'video': {'status': 'pending'},
                 'audio': {'status': 'pending'},
                 'merge': {'status': 'pending'}
             }
 
-            # --- Video Only → needs merge ---
             if format_type == "Video Only":
                 temp_video = os.path.join(save_path, f'temp_video_{download_id}.mp4')
-                temp_audio = os.path.join(save_path, f'temp_audio_{download_id}.mp3')
+                temp_audio = os.path.join(save_path, f'temp_audio_{download_id}.m4a')
 
                 with ThreadPoolExecutor(max_workers=2) as executor:
                     video_future = executor.submit(download_stream, url, format_id, 'video', download_id, temp_video)
@@ -176,7 +164,6 @@ def download():
                 process = subprocess.Popen(cmd, shell=True)
                 process.wait()
 
-                # Cleanup
                 for f in (temp_video, temp_audio):
                     if os.path.exists(f): os.remove(f)
 
@@ -189,13 +176,14 @@ def download():
                 else:
                     download_progress[download_id]['merge'] = {'status': 'error', 'error': 'ffmpeg merge failed'}
 
-            # --- Full Video (no merge needed) ---
             else:
                 output_template = os.path.join(save_path, f"{title} - {resolution}.%(ext)s")
                 ydl_opts = {
                     'format': format_id,
                     'outtmpl': output_template,
                     'quiet': True,
+                    'cookies': 'youtube_cookies.txt',
+                    'noplaylist': True,
                     'progress_hooks': [lambda d: progress_hook(d, download_id, 'video')]
                 }
 
@@ -222,20 +210,13 @@ def download():
                 'merge': {'status': 'error'}
             }
 
-    # Run task in background
-    thread = threading.Thread(target=download_task)
-    thread.start()
-
+    threading.Thread(target=download_task).start()
     return jsonify({'success': True, 'download_id': download_id})
 
 @app.route('/progress/<download_id>')
 def get_progress(download_id):
-    """Return current progress of given download."""
     return jsonify(download_progress.get(download_id, {}))
 
-# ----------------------------
-# Main entry
-# ----------------------------
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
