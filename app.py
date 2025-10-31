@@ -18,9 +18,54 @@ def clean_url(url):
         return url.split('?')[0]
     return url
 
+def is_valid_format(f):
+    vcodec = f.get('vcodec', '')
+    ext = f.get('ext', '')
+    return not (vcodec == 'av01' or ext == 'webm')
+
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.route('/validate_cookies', methods=['GET'])
+def validate_cookies():
+    required_keys = {'SID', 'HSID', 'SAPISID', 'APISID', '__Secure-3PAPISID'}
+    found_keys = set()
+
+    try:
+        with open('youtube_cookies.txt', 'r', encoding='utf-8') as f:
+            for line in f:
+                if not line.strip() or line.startswith('#'):
+                    continue
+                parts = line.strip().split('\t')
+                if len(parts) >= 7:
+                    cookie_name = parts[5]
+                    if cookie_name in required_keys:
+                        found_keys.add(cookie_name)
+
+        missing = required_keys - found_keys
+        if missing:
+            return jsonify({
+                'valid': False,
+                'missing': list(missing),
+                'message': 'Your cookies.txt file is missing required login cookies.'
+            })
+        else:
+            return jsonify({
+                'valid': True,
+                'message': 'Your cookies.txt file is valid and contains all required login cookies.'
+            })
+
+    except FileNotFoundError:
+        return jsonify({
+            'valid': False,
+            'error': 'cookies.txt file not found.'
+        })
+    except Exception as e:
+        return jsonify({
+            'valid': False,
+            'error': str(e)
+        })
 
 @app.route('/get_video_info', methods=['POST'])
 def get_video_info():
@@ -32,7 +77,6 @@ def get_video_info():
         ydl_opts = {
             'quiet': True,
             'cookies': 'youtube_cookies.txt',
-            'extract_flat': True,
             'noplaylist': True,
             'skip_download': True
         }
@@ -41,7 +85,10 @@ def get_video_info():
             result = ydl.extract_info(url, download=False)
 
         formats = []
-        for f in result.get('formats', []):
+        for f in sorted(result.get('formats', []), key=lambda x: x.get('height') or 0, reverse=True):
+            if not is_valid_format(f):
+                continue
+
             format_type = (
                 "Video+Audio" if f.get("vcodec") != "none" and f.get("acodec") != "none"
                 else "Audio Only" if f.get("acodec") != "none"
@@ -51,10 +98,10 @@ def get_video_info():
             filesize_str = f"{round(filesize / (1024 * 1024), 2)} MB" if filesize else 'N/A'
 
             formats.append({
-                'format_id': f['format_id'],
+                'format_id': f.get('format_id', ''),
                 'ext': f.get('ext', ''),
-                'resolution': f.get('resolution', 'N/A'),
-                'fps': f.get('fps', 'N/A'),
+                'resolution': f.get('height') or 'N/A',
+                'fps': f.get('fps') or 'N/A',
                 'filesize': filesize_str,
                 'type': format_type
             })
@@ -92,24 +139,40 @@ def progress_hook(d, download_id, stream_type):
             'percent': 100
         }
 
-def download_stream(url, format_spec, stream_type, download_id, output_path):
+def format_exists(url, format_id):
     try:
         ydl_opts = {
-            'format': format_spec,
-            'outtmpl': output_path,
             'quiet': True,
-            'no_warnings': True,
             'cookies': 'youtube_cookies.txt',
             'noplaylist': True,
-            'progress_hooks': [lambda d: progress_hook(d, download_id, stream_type)]
+            'skip_download': True
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
-        download_progress[download_id][stream_type]['status'] = 'complete'
-        return True
-    except Exception as e:
-        download_progress[download_id][stream_type] = {'status': 'error', 'error': str(e)}
+            info = ydl.extract_info(url, download=False)
+            return any(f['format_id'] == format_id for f in info.get('formats', []))
+    except Exception:
         return False
+
+def download_stream(url, format_spec, stream_type, download_id, output_path, retries=1):
+    for attempt in range(retries + 1):
+        try:
+            ydl_opts = {
+                'format': format_spec,
+                'outtmpl': output_path,
+                'quiet': True,
+                'no_warnings': True,
+                'cookies': 'youtube_cookies.txt',
+                'noplaylist': True,
+                'progress_hooks': [lambda d: progress_hook(d, download_id, stream_type)]
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
+            download_progress[download_id][stream_type]['status'] = 'complete'
+            return True
+        except Exception as e:
+            if attempt == retries:
+                download_progress[download_id][stream_type] = {'status': 'error', 'error': str(e)}
+                return False
 
 @app.route('/download', methods=['POST'])
 def download():
@@ -128,6 +191,14 @@ def download():
             if not url or not format_id:
                 download_progress[download_id] = {
                     'video': {'status': 'error', 'error': 'Missing URL or format ID'},
+                    'audio': {'status': 'error'},
+                    'merge': {'status': 'error'}
+                }
+                return
+
+            if not format_exists(url, format_id):
+                download_progress[download_id] = {
+                    'video': {'status': 'error', 'error': f'Format {format_id} not available for this video.'},
                     'audio': {'status': 'error'},
                     'merge': {'status': 'error'}
                 }
@@ -165,7 +236,8 @@ def download():
                 process.wait()
 
                 for f in (temp_video, temp_audio):
-                    if os.path.exists(f): os.remove(f)
+                    if os.path.exists(f):
+                        os.remove(f)
 
                 if process.returncode == 0:
                     download_progress[download_id]['merge'] = {
@@ -174,7 +246,10 @@ def download():
                         'filename': output_file
                     }
                 else:
-                    download_progress[download_id]['merge'] = {'status': 'error', 'error': 'ffmpeg merge failed'}
+                    download_progress[download_id]['merge'] = {
+                        'status': 'error',
+                        'error': 'ffmpeg merge failed'
+                    }
 
             else:
                 output_template = os.path.join(save_path, f"{title} - {resolution}.%(ext)s")
