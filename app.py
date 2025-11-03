@@ -1,297 +1,354 @@
-from flask import Flask, render_template, request, jsonify
-import yt_dlp
-import os
-import subprocess
-import threading
-from concurrent.futures import ThreadPoolExecutor
-import time
-import re
+from flask import Flask, request, render_template, jsonify
+import yt_dlp, threading, re, os, subprocess, tempfile, time
 
 app = Flask(__name__)
-download_progress = {}
 
-def sanitize_filename(filename):
-    return re.sub(r'[<>:"/\\|?*\x00-\x1F]', '', filename).strip().replace(":", "-")
+progress_state = {}
+video_info = {}
+last_filename = ""
+cancel_active = False
 
-def clean_url(url):
-    if 'list=' in url:
-        return url.split('?')[0]
-    return url
+# ---------------- Helpers ----------------
+def reset_progress():
+    global progress_state, last_filename
+    progress_state = {
+        "video": {"status": "", "eta": "—", "speed": "—", "percent": "0%", "size": "—"},
+        "audio": {"status": "", "eta": "—", "speed": "—", "percent": "0%", "size": "—"},
+        "merge": {"status": "", "eta": "—", "speed": "—", "percent": "0%", "size": "—"},
+    }
+    last_filename = ""
 
-def is_valid_format(f):
-    vcodec = f.get('vcodec', '')
-    ext = f.get('ext', '')
-    return not (vcodec == 'av01' or ext == 'webm')
+def sanitize_filename(name: str) -> str:
+    if not name:
+        return "download"
+    return re.sub(r'[\\/*?:"<>|]', "_", name)
 
-@app.route('/')
-def index():
-    return render_template('index.html')
+def unique_filename(base, ext):
+    candidate = f"{base}.{ext}"
+    counter = 1
+    while os.path.exists(candidate):
+        candidate = f"{base} ({counter}).{ext}"
+        counter += 1
+    return candidate
 
-@app.route('/validate_cookies', methods=['GET'])
-def validate_cookies():
-    required_keys = {'SID', 'HSID', 'SAPISID', 'APISID', '__Secure-3PAPISID'}
-    found_keys = set()
-
+def format_speed(speed):
+    if not speed: return "—"
     try:
-        with open('youtube_cookies.txt', 'r', encoding='utf-8') as f:
-            for line in f:
-                if not line.strip() or line.startswith('#'):
-                    continue
-                parts = line.strip().split('\t')
-                if len(parts) >= 7:
-                    cookie_name = parts[5]
-                    if cookie_name in required_keys:
-                        found_keys.add(cookie_name)
+        mb = float(speed) / (1024**2)
+        return f"{mb:.1f} MB/s"
+    except:
+        return "—"
 
-        missing = required_keys - found_keys
-        if missing:
-            return jsonify({
-                'valid': False,
-                'missing': list(missing),
-                'message': 'Your cookies.txt file is missing required login cookies.'
-            })
-        else:
-            return jsonify({
-                'valid': True,
-                'message': 'Your cookies.txt file is valid and contains all required login cookies.'
-            })
-
-    except FileNotFoundError:
-        return jsonify({
-            'valid': False,
-            'error': 'cookies.txt file not found.'
-        })
-    except Exception as e:
-        return jsonify({
-            'valid': False,
-            'error': str(e)
-        })
-
-@app.route('/get_video_info', methods=['POST'])
-def get_video_info():
+def format_eta(eta):
+    if eta is None: return "—"
     try:
-        url = clean_url(request.json.get('url'))
-        if not url:
-            return jsonify({'success': False, 'error': 'Missing video URL'})
+        m, s = divmod(int(eta), 60)
+        h, m = divmod(m, 60)
+        return f"{h:02d}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
+    except:
+        return "—"
 
-        ydl_opts = {
-            'quiet': True,
-            'cookies': 'youtube_cookies.txt',
-            'noplaylist': True,
-            'skip_download': True
-        }
-
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            result = ydl.extract_info(url, download=False)
-
-        formats = []
-        for f in sorted(result.get('formats', []), key=lambda x: x.get('height') or 0, reverse=True):
-            if not is_valid_format(f):
-                continue
-
-            format_type = (
-                "Video+Audio" if f.get("vcodec") != "none" and f.get("acodec") != "none"
-                else "Audio Only" if f.get("acodec") != "none"
-                else "Video Only"
-            )
-            filesize = f.get('filesize') or f.get('filesize_approx')
-            filesize_str = f"{round(filesize / (1024 * 1024), 2)} MB" if filesize else 'N/A'
-
-            formats.append({
-                'format_id': f.get('format_id', ''),
-                'ext': f.get('ext', ''),
-                'resolution': f.get('height') or 'N/A',
-                'fps': f.get('fps') or 'N/A',
-                'filesize': filesize_str,
-                'type': format_type
-            })
-
-        return jsonify({
-            'success': True,
-            'title': result.get('title', 'Unknown'),
-            'thumbnail': result.get('thumbnail', ''),
-            'formats': formats
-        })
-
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
-
-def progress_hook(d, download_id, stream_type):
-    if d['status'] == 'downloading':
-        total = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
-        downloaded = d.get('downloaded_bytes', 0)
-        speed = d.get('speed', 0)
-        eta = d.get('eta', 0)
-        percent = (downloaded / total * 100) if total > 0 else 0
-
-        download_progress[download_id][stream_type] = {
-            'status': 'downloading',
-            'percent': round(percent, 1),
-            'downloaded_mb': round(downloaded / (1024 * 1024), 2),
-            'total_mb': round(total / (1024 * 1024), 2),
-            'speed_mbps': round((speed or 0) / (1024 * 1024), 2),
-            'eta': eta
-        }
-
-    elif d['status'] == 'finished':
-        download_progress[download_id][stream_type] = {
-            'status': 'finished',
-            'percent': 100
-        }
-
-def format_exists(url, format_id):
+def fmt_size(b):
+    if not b: return "—"
     try:
-        ydl_opts = {
-            'quiet': True,
-            'cookies': 'youtube_cookies.txt',
-            'noplaylist': True,
-            'skip_download': True
-        }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            return any(f['format_id'] == format_id for f in info.get('formats', []))
-    except Exception:
-        return False
+        b = int(b)
+        kb, mb, gb = b/1024, b/1024**2, b/1024**3
+        if gb >= 1: return f"{gb:.2f} GB"
+        if mb >= 1: return f"{mb:.1f} MB"
+        return f"{int(kb)} KB"
+    except:
+        return "—"
 
-def download_stream(url, format_spec, stream_type, download_id, output_path, retries=1):
-    for attempt in range(retries + 1):
+def build_filename(title, vfmt=None, afmt=None, is_video=True):
+    safe_title = sanitize_filename(title)
+    parts = [safe_title]
+    if is_video and vfmt:
+        res = vfmt.get("resolution") or (f"{vfmt.get('height')}p" if vfmt.get('height') else None)
+        if res: parts.append(res)
+    if afmt:
+        abr = afmt.get("abr")
+        abr_label = f"{abr}kbps" if isinstance(abr, int) or (isinstance(abr, str) and abr.isdigit()) else str(abr or "")
+        if abr_label: parts.append(abr_label)
+    ext = "mp4" if is_video else "mp3"
+    return unique_filename("_".join([p for p in parts if p]), ext)
+
+# ---------------- Hooks ----------------
+def make_hook(phase):
+    def hook(d):
+        global last_filename, cancel_active
+        if cancel_active:
+            raise yt_dlp.utils.DownloadCancelled()
+
+        if d.get("filename"):
+            last_filename = d["filename"]
+
+        total = d.get("total_bytes") or d.get("total_bytes_estimate")
+        downloaded = d.get("downloaded_bytes")
         try:
+            percent = f"{(downloaded/total)*100:.1f}%" if total and downloaded else "0%"
+        except:
+            percent = "0%"
+
+        progress_state[phase] = {
+            "status": d.get("status") or "",
+            "eta": format_eta(d.get("eta")),
+            "speed": format_speed(d.get("speed")),
+            "percent": percent,
+            "size": fmt_size(total)
+        }
+    return hook
+
+# ---------------- Routes ----------------
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+@app.route("/fetch", methods=["POST"])
+def fetch():
+    reset_progress()
+    global cancel_active
+    cancel_active = False
+    url = (request.get_json() or {}).get("url","").strip()
+    try:
+        with yt_dlp.YoutubeDL({"quiet": True}) as ydl:
+            info = ydl.extract_info(url, download=False)
+            video_info.clear()
+            video_info["title"] = info.get("title") or ""
+            video_info["thumbnail"] = info.get("thumbnail") or ""
+            # collect video formats (video-containing)
+            video_info["video_formats"] = [
+                {
+                    "format_id": f.get("format_id"),
+                    "ext": f.get("ext"),
+                    "resolution": f.get("resolution") or (f"{f.get('height')}p" if f.get("height") else None),
+                    "height": f.get("height"),
+                    "size": f.get("filesize") or f.get("filesize_approx")
+                }
+                for f in info.get("formats", [])
+                if f.get("vcodec") != "none" and f.get("ext") in ("mp4","webm","mkv")
+            ]
+            # collect audio-only formats
+            video_info["audio_formats"] = [
+                {
+                    "format_id": f.get("format_id"),
+                    "abr": f.get("abr"),
+                    "ext": f.get("ext"),
+                    "acodec": f.get("acodec"),
+                    "filesize": f.get("filesize") or f.get("filesize_approx")
+                }
+                for f in info.get("formats", [])
+                if f.get("vcodec") == "none" and f.get("acodec") != "none"
+            ]
+            # sort audio_formats descending by abr when available
+            video_info["audio_formats"].sort(key=lambda x: (x.get("abr") or 0), reverse=True)
+    except Exception as e:
+        print("Error in /fetch:", e)
+        video_info.clear()
+    return jsonify({"status": "info_fetched"})
+
+@app.route("/info")
+def info():
+    return jsonify(video_info)
+
+@app.route("/download_audio", methods=["POST"])
+def download_audio():
+    global cancel_active, last_filename
+    cancel_active = False
+    reset_progress()
+    data = request.get_json() or {}
+    url = (data.get("url") or "").strip()
+    audio_id = data.get("audio_id") or "bestaudio"
+    force_mp3 = bool(data.get("force_mp3", False))
+    lossless_only = bool(data.get("lossless_only", False))
+    requested_format = data.get("format")  # optional explicit format
+
+    # Probe to detect bitrate (abr) for naming/format decision
+    try:
+        with yt_dlp.YoutubeDL({"quiet": True}) as ydl:
+            info = ydl.extract_info(url, download=False)
+            fmt = next((f for f in info.get("formats", []) if f.get("format_id") == audio_id), {})
+            abr = fmt.get("abr") or 0
+            # normalize to int if possible
+            try:
+                abr = int(abr)
+            except:
+                abr = 0
+    except Exception as e:
+        print("Bitrate detection failed:", e)
+        abr = 0
+
+    # Decide output format
+    if requested_format:
+        output_format = requested_format
+    elif force_mp3:
+        output_format = "mp3"
+    elif lossless_only:
+        output_format = "flac"
+    else:
+        if abr >= 256:
+            output_format = "flac"
+        elif abr >= 192:
+            output_format = "mp3"
+        else:
+            output_format = "ogg"
+
+    abr_label = f"{abr}kbps" if abr else "best"
+    outtmpl = build_filename(video_info.get("title", "audio"), afmt={"abr": abr_label}, is_video=False)
+    outtmpl = outtmpl.rsplit(".", 1)[0] + f".{output_format}"
+
+    if os.path.exists(outtmpl):
+        size = os.path.getsize(outtmpl)
+        progress_state["audio"] = {"status":"finished","eta":"Done","speed":"—","percent":"100%","size":fmt_size(size)}
+        last_filename = outtmpl
+        return jsonify({"status":"already_done"})
+
+    temp_file = tempfile.mktemp(suffix=".m4a")
+
+    def run_audio():
+        try:
+            # download chosen audio stream to temp file
             ydl_opts = {
-                'format': format_spec,
-                'outtmpl': output_path,
-                'quiet': True,
-                'no_warnings': True,
-                'cookies': 'youtube_cookies.txt',
-                'noplaylist': True,
-                'progress_hooks': [lambda d: progress_hook(d, download_id, stream_type)]
+                "quiet": True,
+                "progress_hooks": [make_hook("audio")],
+                "outtmpl": temp_file,
+                "format": audio_id,
+                "overwrites": True
             }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([url])
-            download_progress[download_id][stream_type]['status'] = 'complete'
-            return True
+
+            # convert to desired format
+            codec_map = {
+                "mp3": ["-acodec", "libmp3lame", "-q:a", "0"],
+                "webm": ["-acodec", "libvorbis"],
+                "ogg": ["-acodec", "libvorbis"],
+                "flac": ["-acodec", "flac"],
+                "wav": ["-acodec", "pcm_s16le"]
+            }
+            ffmpeg_args = codec_map.get(output_format, ["-acodec", "libmp3lame", "-q:a", "0"])
+
+            subprocess.run(["ffmpeg", "-y", "-i", temp_file, *ffmpeg_args, outtmpl],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+            progress_state["audio"] = {
+                "status": "finished",
+                "eta": "Done",
+                "speed": "—",
+                "percent": "100%",
+                "size": fmt_size(os.path.getsize(outtmpl))
+            }
+            last_filename = outtmpl
+
+        except yt_dlp.utils.DownloadCancelled:
+            progress_state["audio"]["status"] = "cancelled"
         except Exception as e:
-            if attempt == retries:
-                download_progress[download_id][stream_type] = {'status': 'error', 'error': str(e)}
-                return False
+            print("Audio download/convert failed:", e)
+            progress_state["audio"]["status"] = "error"
+        finally:
+            try: os.remove(temp_file)
+            except: pass
 
-@app.route('/download', methods=['POST'])
-def download():
-    download_id = str(int(time.time() * 1000))
-    data = request.get_json()
+    threading.Thread(target=run_audio, daemon=True).start()
+    return jsonify({"status": "started"})
 
-    def download_task():
+@app.route("/download_video", methods=["POST"])
+def download_video():
+    global cancel_active, last_filename
+    cancel_active = False
+    reset_progress()
+    data = request.get_json() or {}
+    url = (data.get("url") or "").strip()
+    video_id, audio_id = data.get("video_id"), data.get("audio_id")
+
+    vfmt = next((f for f in video_info.get("video_formats", []) if f.get("format_id") == video_id), {})
+    afmt = next((f for f in video_info.get("audio_formats", []) if f.get("format_id") == audio_id), {})
+    final_file = build_filename(video_info.get("title","video"), vfmt=vfmt, afmt=afmt, is_video=True)
+
+    if os.path.exists(final_file):
+        size = os.path.getsize(final_file)
+        for phase in ["video","audio","merge"]:
+            progress_state[phase] = {"status":"finished","eta":"Done","speed":"—","percent":"100%","size":fmt_size(size)}
+        last_filename = final_file
+        return jsonify({"status":"already_done"})
+
+    tmp_video = tempfile.mktemp(suffix=".mp4")
+    tmp_audio = tempfile.mktemp(suffix=".m4a")
+
+    def run_video():
         try:
-            url = clean_url(data.get('url'))
-            format_id = data.get('format_id')
-            format_type = data.get('format_type')
-            title = sanitize_filename(data.get('title', 'video'))
-            resolution = data.get('resolution', '')
-            custom_path = data.get('custom_path', '').strip()
+            # download video and audio in parallel
+            def dl_video():
+                v_opts = {"quiet": True, "progress_hooks":[make_hook("video")], "outtmpl": tmp_video, "format": video_id or "bestvideo"}
+                with yt_dlp.YoutubeDL(v_opts) as ydl:
+                    ydl.download([url])
 
-            if not url or not format_id:
-                download_progress[download_id] = {
-                    'video': {'status': 'error', 'error': 'Missing URL or format ID'},
-                    'audio': {'status': 'error'},
-                    'merge': {'status': 'error'}
-                }
-                return
+            def dl_audio():
+                a_opts = {"quiet": True, "progress_hooks":[make_hook("audio")], "outtmpl": tmp_audio, "format": audio_id or "bestaudio"}
+                with yt_dlp.YoutubeDL(a_opts) as ydl:
+                    ydl.download([url])
 
-            if not format_exists(url, format_id):
-                download_progress[download_id] = {
-                    'video': {'status': 'error', 'error': f'Format {format_id} not available for this video.'},
-                    'audio': {'status': 'error'},
-                    'merge': {'status': 'error'}
-                }
-                return
+            t1 = threading.Thread(target=dl_video, daemon=True)
+            t2 = threading.Thread(target=dl_audio, daemon=True)
+            t1.start(); t2.start()
+            t1.join(); t2.join()
 
-            save_path = custom_path if custom_path else '.'
-            os.makedirs(save_path, exist_ok=True)
+            # merge
+            progress_state["merge"] = {"status":"merging","eta":"—","speed":"—","percent":"0%","size":"—"}
 
-            download_progress[download_id] = {
-                'video': {'status': 'pending'},
-                'audio': {'status': 'pending'},
-                'merge': {'status': 'pending'}
+            subprocess.run([
+                "ffmpeg", "-y",
+                "-i", tmp_video,
+                "-i", tmp_audio,
+                "-c", "copy", final_file
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+            progress_state["merge"] = {
+                "status": "finished",
+                "eta": "Done",
+                "speed": "—",
+                "percent": "100%",
+                "size": fmt_size(os.path.getsize(final_file))
             }
+            last_filename = final_file
 
-            if format_type == "Video Only":
-                temp_video = os.path.join(save_path, f'temp_video_{download_id}.mp4')
-                temp_audio = os.path.join(save_path, f'temp_audio_{download_id}.m4a')
-
-                with ThreadPoolExecutor(max_workers=2) as executor:
-                    video_future = executor.submit(download_stream, url, format_id, 'video', download_id, temp_video)
-                    audio_future = executor.submit(download_stream, url, 'bestaudio[ext=m4a]/bestaudio', 'audio', download_id, temp_audio)
-
-                    video_ok = video_future.result()
-                    audio_ok = audio_future.result()
-
-                if not video_ok or not audio_ok:
-                    download_progress[download_id]['merge'] = {'status': 'error', 'error': 'Video or audio download failed'}
-                    return
-
-                output_file = os.path.join(save_path, f"{title} - {resolution}.mp4")
-                download_progress[download_id]['merge'] = {'status': 'merging', 'percent': 50}
-
-                cmd = f'ffmpeg -i "{temp_video}" -i "{temp_audio}" -c:v copy -c:a aac "{output_file}" -y -loglevel error'
-                process = subprocess.Popen(cmd, shell=True)
-                process.wait()
-
-                for f in (temp_video, temp_audio):
-                    if os.path.exists(f):
-                        os.remove(f)
-
-                if process.returncode == 0:
-                    download_progress[download_id]['merge'] = {
-                        'status': 'complete',
-                        'percent': 100,
-                        'filename': output_file
-                    }
-                else:
-                    download_progress[download_id]['merge'] = {
-                        'status': 'error',
-                        'error': 'ffmpeg merge failed'
-                    }
-
-            else:
-                output_template = os.path.join(save_path, f"{title} - {resolution}.%(ext)s")
-                ydl_opts = {
-                    'format': format_id,
-                    'outtmpl': output_template,
-                    'quiet': True,
-                    'cookies': 'youtube_cookies.txt',
-                    'noplaylist': True,
-                    'progress_hooks': [lambda d: progress_hook(d, download_id, 'video')]
-                }
-
-                download_progress[download_id] = {
-                    'video': {'status': 'pending'},
-                    'audio': {'status': 'not_needed'},
-                    'merge': {'status': 'not_needed'}
-                }
-
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(url, download=True)
-                    final_filename = ydl.prepare_filename(info)
-
-                download_progress[download_id]['video'] = {
-                    'status': 'complete',
-                    'percent': 100,
-                    'filename': final_filename
-                }
-
+        except yt_dlp.utils.DownloadCancelled:
+            progress_state["video"]["status"] = "cancelled"
+            progress_state["audio"]["status"] = "cancelled"
+            progress_state["merge"]["status"] = "cancelled"
         except Exception as e:
-            download_progress[download_id] = {
-                'video': {'status': 'error', 'error': str(e)},
-                'audio': {'status': 'error'},
-                'merge': {'status': 'error'}
-            }
+            print("Video download/merge failed:", e)
+            progress_state["merge"]["status"] = "error"
+        finally:
+            for f in [tmp_video, tmp_audio]:
+                try: os.remove(f)
+                except: pass
 
-    threading.Thread(target=download_task).start()
-    return jsonify({'success': True, 'download_id': download_id})
+    threading.Thread(target=run_video, daemon=True).start()
+    return jsonify({"status": "started"})
 
-@app.route('/progress/<download_id>')
-def get_progress(download_id):
-    return jsonify(download_progress.get(download_id, {}))
+@app.route("/progress")
+def progress():
+    # Return a shallow copy to avoid accidental mutation in client handling
+    return jsonify(progress_state)
 
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+@app.route("/done")
+def done():
+    return jsonify({"filename": last_filename})
+
+@app.route("/cancel", methods=["POST"])
+def cancel():
+    global cancel_active
+    cancel_active = True
+    return jsonify({"status": "cancelled"})
+
+@app.route("/reset", methods=["POST"])
+def reset():
+    reset_progress()
+    video_info.clear()
+    global cancel_active
+    cancel_active = False
+    return jsonify({"status": "reset_done"})
+
+if __name__ == "__main__":
+    reset_progress()
+    app.run(debug=True, threaded=True)
