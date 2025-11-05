@@ -1,484 +1,240 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>YouTube Downloader</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <style>
-    :root { --bg:#0f1115; --panel:#11131a; --muted:#98a0b3; --accent1:#2dd4bf; --accent2:#22c55e; --card:#151721; color-scheme: dark; }
-    body { margin:0; font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; background:var(--bg); color:#e6eef6; }
-    .container { max-width:920px; margin:28px auto; padding:20px; }
-    h1 { margin:0 0 14px 0; font-size:20px; }
-    .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-    input[type="text"], select { background:var(--panel); border:1px solid #222632; color:inherit; padding:10px 12px; border-radius:8px; min-width:220px; }
-    button { background:linear-gradient(90deg,var(--accent1),var(--accent2)); border:none; color:#071019; padding:10px 12px; border-radius:8px; cursor:pointer; font-weight:600; }
-    button.secondary { background:transparent; border:1px solid #2b3242; color:var(--muted); }
-    .small { font-size:13px; padding:8px 10px; border-radius:6px; }
-    .controls { margin-top:12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-    .panel { background:var(--card); border:1px solid #1e222b; padding:14px; border-radius:10px; margin-top:14px; }
-    .label { font-size:13px; color:var(--muted); margin-bottom:6px; }
-    .progress { background:#0b0d11; border:1px solid #222632; border-radius:8px; height:22px; position:relative; overflow:hidden; }
-    .bar { height:100%; width:0%; background:linear-gradient(90deg,var(--accent1),var(--accent2)); transition:width .35s ease; }
-    .percent { position:absolute; left:50%; top:0; transform:translateX(-50%); font-size:12px; font-weight:700; color:#071019; line-height:22px; }
-    .metrics { display:flex; gap:12px; margin-top:8px; font-size:13px; color:var(--muted); }
-    .metric { min-width:90px; }
-    .thumb { max-width:220px; border-radius:8px; margin-top:12px; display:none; border:1px solid #222632; }
-    .info-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:8px; }
-    .toggles { display:flex; gap:10px; align-items:center; font-size:13px; color:var(--muted); }
-    .note { font-size:13px; color:var(--muted); margin-top:8px; }
-    .error { margin-top:8px; background:#2b1616; color:#ffd6d6; padding:8px 10px; border-radius:8px; display:none; }
-    #complete { margin-top:10px; color:var(--accent2); font-weight:700; }
-    .spinner { width:14px; height:14px; border-radius:50%; border:2px solid #22313a; border-top:2px solid var(--accent2); display:inline-block; animation:spin .9s linear infinite; vertical-align:middle; margin-right:8px;}
-    @keyframes spin { to { transform:rotate(360deg); } }
-
-    /* NEW: 3-button selector (Auto / Force MP3 / Lossless) for right column */
-    .seg-btns { display:flex; gap:8px; margin-top:10px; width:100%; }
-    .seg-btn { flex:1; padding:8px 10px; border-radius:8px; border:1px solid #222b2f; background:linear-gradient(180deg,#0b1114,#071011); color:#cfeee2; font-weight:700; cursor:pointer; font-size:13px; }
-    .seg-btn.inactive { color:#98a0b3; background:linear-gradient(180deg,#0b0f14,#071012); border-color:#222b2e; box-shadow:none; }
-    .seg-btn.active { color:#041005; background:linear-gradient(90deg,#8ef0c8,#22c55e); border-color:transparent; box-shadow:0 8px 22px rgba(34,197,94,0.18); }
-    .seg-desc { margin-top:8px; color:var(--muted); font-size:13px; text-align:center; }
-    @media (max-width:720px) {
-      .info-row { flex-direction:column; }
-      .thumb { margin:0 auto 10px auto; }
-    }
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>YouTube Downloader — Multi Theme</title>
+<style>
+  :root {
+    --bg:#0f1115;--panel:#11131a;--card:#151721;
+    --text:#e6eef6;--muted:#98a0b3;
+    --accent1:#2dd4bf;--accent2:#22c55e;
+    --blur:0px;--shadow:none;--radius:10px;
+    transition: all .4s ease;
+  }
+  body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--text);}
+  .container{max-width:920px;margin:28px auto;padding:20px;}
+  h1{margin:0 0 10px;font-size:22px;}
+  select,input[type="text"],button{transition:all .3s ease;}
+  input[type="text"],select{
+    background:var(--panel);border:1px solid #222632;color:inherit;
+    padding:10px 12px;border-radius:var(--radius);backdrop-filter:blur(var(--blur));
+  }
+  button{
+    background:linear-gradient(90deg,var(--accent1),var(--accent2));
+    border:none;color:#071019;padding:10px 12px;border-radius:var(--radius);
+    cursor:pointer;font-weight:600;box-shadow:var(--shadow);
+    display:flex;align-items:center;justify-content:center;gap:6px;
+  }
+  button:hover{filter:brightness(1.1);}
+  button.secondary{background:transparent;border:1px solid #2b3242;color:var(--muted);}
+  /* cancel red glow */
+  .cancel-glow{
+    border:1px solid #ff4747 !important;
+    color:#ffb3b3 !important;
+    box-shadow:0 0 10px rgba(255,50,50,0.6),0 0 25px rgba(255,50,50,0.4) !important;
+    animation:cancelPulse 1.2s infinite alternate;
+  }
+  @keyframes cancelPulse{
+    0%{box-shadow:0 0 10px rgba(255,50,50,0.5),0 0 20px rgba(255,50,50,0.3);}
+    100%{box-shadow:0 0 20px rgba(255,70,70,0.9),0 0 35px rgba(255,50,50,0.6);}
+  }
+  /* reset green pulse */
+  .reset-pulse{
+    animation:resetPulse 0.8s ease-out;
+    border:1px solid #22c55e !important;
+    color:#22c55e !important;
+    box-shadow:0 0 12px rgba(34,197,94,0.6) !important;
+  }
+  @keyframes resetPulse{
+    0%{box-shadow:0 0 0 rgba(34,197,94,0);}
+    50%{box-shadow:0 0 15px rgba(34,197,94,0.8);}
+    100%{box-shadow:0 0 0 rgba(34,197,94,0);}
+  }
+  .panel{background:var(--card);border:1px solid #1e222b;padding:14px;border-radius:var(--radius);margin-top:14px;}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+  .controls{margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;}
+  .progress{background:#0b0d11;border:1px solid #222632;border-radius:8px;height:22px;position:relative;overflow:hidden;}
+  .bar{height:100%;width:0%;background:linear-gradient(90deg,var(--accent1),var(--accent2));transition:width .35s ease;}
+  .percent{position:absolute;left:50%;top:0;transform:translateX(-50%);font-size:12px;font-weight:700;color:#071019;line-height:22px;}
+  .note{font-size:13px;color:var(--muted);margin-top:8px;}
+  .thumb{max-width:200px;border-radius:8px;margin-top:12px;border:1px solid #222632;display:none;}
+  .metric{min-width:90px;color:var(--muted);font-size:13px;}
+  .spinner{width:14px;height:14px;border-radius:50%;border:2px solid #22313a;border-top:2px solid var(--accent2);display:inline-block;animation:spin .9s linear infinite;vertical-align:middle;}
+  .loading{animation:pulseGlow 1.2s infinite alternate ease-in-out;box-shadow:0 0 12px var(--accent2),0 0 25px var(--accent2);}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  @keyframes pulseGlow{0%{box-shadow:0 0 6px var(--accent2),0 0 15px var(--accent2);}100%{box-shadow:0 0 18px var(--accent2),0 0 35px var(--accent2);}}
+</style>
 </head>
 <body>
-  <div class="container">
-    <h1>YouTube Downloader</h1>
+<div class="container">
+  <h1>YouTube Downloader</h1>
 
-    <div class="panel">
+  <div class="panel">
+    <div class="row">
+      <input id="url" type="text" placeholder="Paste YouTube URL" />
+      <button id="fetch-btn" onclick="fetchInfo()">Fetch Info</button>
+    </div>
+
+    <div id="fetched-area" style="display:none;margin-top:12px;">
       <div class="row">
-        <input id="url" type="text" placeholder="Paste YouTube URL" />
-        <button id="fetch-btn" onclick="fetchInfo()">Fetch info</button>
-      </div>
-
-      <div id="fetched-area" style="display:none; margin-top:12px;">
-        <div class="info-row">
-          <div style="flex:1;">
-            <div class="label">Video formats</div>
-            <select id="video"></select>
-            <div id="video-size-preview" class="note"></div>
-          </div>
-
-          <div style="flex:1;">
-            <div class="label">Audio formats</div>
-            <select id="audio"></select>
-            <div id="audio-size-preview" class="note"></div>
-          </div>
-
-          <div style="min-width:180px;">
-            <!-- Thumbnail (top of right block) -->
-            <img id="thumbnail" class="thumb" alt="thumb" />
-            <div id="format-label" class="note">Format auto-select: based on bitrate.</div>
-
-            <!-- REPLACED: checkboxes -> 3-button single-choice selector -->
-            <div class="seg-btns" role="tablist" aria-label="Format mode">
-              <button id="seg-auto" class="seg-btn">Auto</button>
-              <button id="seg-mp3" class="seg-btn">Force MP3</button>
-              <button id="seg-lossless" class="seg-btn">Lossless</button>
-            </div>
-            <div id="seg-desc" class="seg-desc">Auto — backend chooses the best format based on bitrate.</div>
-          </div>
+        <div style="flex:1;">
+          <div class="note">🎬 Video formats</div>
+          <select id="video"></select>
         </div>
-
-        <div class="controls">
-          <button id="audio-btn" onclick="startAudio()" class="small">Download Audio</button>
-          <button id="video-btn" onclick="startVideo()" class="small">Download Video</button>
-          <button id="cancel-btn" onclick="cancelDownload()" class="small secondary" style="display:none;">Cancel</button>
-          <button id="reset-btn" onclick="resetUI()" class="small secondary" style="display:none;">Reset</button>
+        <div style="flex:1;">
+          <div class="note">🎧 Audio formats</div>
+          <select id="audio"></select>
+        </div>
+        <div style="min-width:180px;">
+          <img id="thumbnail" class="thumb" alt="Thumbnail" />
         </div>
       </div>
 
-      <div id="status" class="note" style="margin-top:10px;">⏳ Waiting for input…</div>
-      <div id="error" class="error"></div>
-      <div id="complete"></div>
-    </div>
-
-    <div id="progress-section" class="panel" style="display:none;">
-      <div id="video-section" style="display:none;">
-        <h3 style="margin:0 0 8px 0;">Video</h3>
-        <div class="progress"><div id="video-bar" class="bar"></div><div id="video-percent" class="percent">0%</div></div>
-        <div class="metrics">
-          <div id="video-eta" class="metric">ETA: —</div>
-          <div id="video-speed" class="metric">Speed: —</div>
-          <div id="video-size" class="metric">Size: —</div>
-          <div id="video-status" class="metric">Status: —</div>
-        </div>
-      </div>
-
-      <div id="audio-section" style="display:none; margin-top:12px;">
-        <h3 style="margin:0 0 8px 0;">Audio</h3>
-        <div class="progress"><div id="audio-bar" class="bar"></div><div id="audio-percent" class="percent">0%</div></div>
-        <div class="metrics">
-          <div id="audio-eta" class="metric">ETA: —</div>
-          <div id="audio-speed" class="metric">Speed: —</div>
-          <div id="audio-size" class="metric">Size: —</div>
-          <div id="audio-status" class="metric">Status: —</div>
-        </div>
-      </div>
-
-      <div id="merge-section" style="display:none; margin-top:12px;">
-        <h3 style="margin:0 0 8px 0;">Merge</h3>
-        <div class="progress"><div id="merge-bar" class="bar"></div><div id="merge-percent" class="percent">0%</div></div>
-        <div class="metrics">
-          <div id="merge-eta" class="metric">ETA: —</div>
-          <div id="merge-speed" class="metric">Speed: —</div>
-          <div id="merge-size" class="metric">Size: —</div>
-          <div id="merge-status" class="metric">Status: —</div>
-        </div>
+      <div class="controls">
+        <button id="audio-btn" onclick="startAudio()">Download Audio</button>
+        <button id="video-btn" onclick="startVideo()">Download Video</button>
+        <button id="cancel-btn" class="secondary" onclick="cancelDownload()">Cancel</button>
+        <button id="reset-btn" class="secondary" onclick="resetApp()">Reset</button>
       </div>
     </div>
+
+    <div id="status" class="note" style="margin-top:10px;">⏳ Waiting for input…</div>
+    <div id="complete"></div>
   </div>
 
-  <script>
-    let poller;
-    let audioFormats = [];
-    let videoFormats = [];
+  <div id="progress-section" class="panel" style="display:none;">
+    <h3 style="margin:0 0 8px 0;">Progress</h3>
+    <div class="progress">
+      <div id="video-bar" class="bar"></div>
+      <div id="video-percent" class="percent">0%</div>
+    </div>
+    <div class="row" style="margin-top:8px;">
+      <div class="metric" id="video-eta">ETA: —</div>
+      <div class="metric" id="video-speed">Speed: —</div>
+      <div class="metric" id="video-size">Size: —</div>
+      <div class="metric" id="video-status">Status: —</div>
+    </div>
+  </div>
+</div>
 
-    function el(id){ return document.getElementById(id); }
-    function setText(id, t){ const n=el(id); if(n) n.textContent = t; }
-    function getVal(id){ const n=el(id); return n? n.value : ""; }
-    function fmtSize(bytes){
-      if(!bytes) return "—";
-      const b = Number(bytes);
-      if(isNaN(b)) return "—";
-      const kb = b/1024, mb = kb/1024, gb = mb/1024;
-      if(gb>=1) return `${gb.toFixed(2)} GB`;
-      if(mb>=1) return `${mb.toFixed(1)} MB`;
-      return `${Math.round(kb)} KB`;
+<script>
+const el=id=>document.getElementById(id);
+const setText=(id,t)=>{if(el(id))el(id).textContent=t;};
+let pollTimer;
+
+function fetchInfo(){
+  const url=el("url").value.trim();
+  if(!url)return alert("Enter URL!");
+  el("fetch-btn").innerHTML="Fetching <span class='spinner'></span>";
+  fetch("/fetch",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url})})
+  .then(r=>r.json()).then(()=>{
+    el("fetch-btn").innerText="Fetched!";
+    setText("status","✅ Info fetched. Ready to download.");
+    el("fetched-area").style.display="block";
+    loadFormats();
+  }).catch(()=>setText("status","⚠️ Fetch failed."));
+}
+
+function loadFormats(){
+  fetch("/info").then(r=>r.json()).then(data=>{
+    const vsel=el("video"), asel=el("audio");
+    vsel.innerHTML=data.video_formats.map(f=>`<option value="${f.format_id}">${f.resolution || "—"} (${f.ext})</option>`).join("");
+    asel.innerHTML=data.audio_formats.map(f=>`<option value="${f.format_id}">${f.abr||"?"}kbps (${f.ext})</option>`).join("");
+    if(data.thumbnail){
+      const thumb=el("thumbnail");
+      thumb.src=data.thumbnail;
+      thumb.style.display="block";
     }
+  });
+}
 
-    // NEW: segmented 3-button selector logic
-    // mode: 0 = Auto, 1 = Force MP3, 2 = Lossless
-    (function(){
-      let mode = 0;
-      const ids = ['seg-auto','seg-mp3','seg-lossless'];
-      const desc = [
-        'Auto — backend chooses the best format based on bitrate.',
-        'Force MP3 — convert/force MP3 output.',
-        'Lossless — prefer lossless output (FLAC).'
-      ];
+function startAudio(){ startDownload("/download_audio","audio-btn","Downloading Audio…"); }
+function startVideo(){ startDownload("/download_video","video-btn","Downloading Video…"); }
 
-      function setMode(m){
-        mode = m;
-        ids.forEach((id, i) => {
-          const b = el(id);
-          if(!b) return;
-          if(i === m){ b.classList.add('active'); b.classList.remove('inactive'); b.setAttribute('aria-pressed','true'); }
-          else { b.classList.add('inactive'); b.classList.remove('active'); b.setAttribute('aria-pressed','false'); }
-        });
-        setText('seg-desc', desc[m]);
-      }
+function startDownload(endpoint,btn,text){
+  const url=el("url").value.trim();
+  if(!url)return alert("Enter URL!");
+  showSpinner(btn,text);
+  el("cancel-btn").classList.add("cancel-glow");
+  el("progress-section").style.display="block";
+  setText("status","⬇️ Download started...");
+  fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url})});
+  pollProgress();
+}
 
-      ids.forEach((id, i) => {
-        const b = el(id);
-        if(!b) return;
-        b.addEventListener('click', () => setMode(i));
+function cancelDownload(){
+  fetch("/cancel",{method:"POST"});
+  el("cancel-btn").classList.remove("cancel-glow");
+  clearTimeout(pollTimer);
+  resetBars();
+  setText("status","❌ Cancelled.");
+  el("complete").innerText="";
+  hideSpinner("audio-btn","Download Audio");
+  hideSpinner("video-btn","Download Video");
+}
+
+function resetApp(){
+  const rb=el("reset-btn");
+  rb.classList.add("reset-pulse");
+  setTimeout(()=>rb.classList.remove("reset-pulse"),800);
+  fetch("/reset",{method:"POST"});
+  el("cancel-btn").classList.remove("cancel-glow");
+  resetBars();
+  el("complete").innerText="";
+  setText("status","🔁 Reset done. Ready.");
+  hideSpinner("audio-btn","Download Audio");
+  hideSpinner("video-btn","Download Video");
+}
+
+function showSpinner(id,text){
+  const b=el(id);
+  b.disabled=true;
+  b.classList.add("loading");
+  b.innerHTML=`<span class="spinner"></span>${text}`;
+}
+function hideSpinner(id,text){
+  const b=el(id);
+  b.disabled=false;
+  b.classList.remove("loading");
+  b.textContent=text;
+}
+
+function pollProgress(){
+  fetch("/progress").then(r=>r.json()).then(d=>{
+    updatePhase(d.video);
+    const done=Object.values(d).some(p=>p.status==="finished");
+    if(done){
+      fetch("/done").then(r=>r.json()).then(j=>{
+        el("cancel-btn").classList.remove("cancel-glow");
+        hideSpinner("audio-btn","Download Audio");
+        hideSpinner("video-btn","Download Video");
+        if(j.filename){
+          const fn=j.filename.split(/[\\/]/).pop();
+          el("complete").innerHTML=`✅ <b>Download done</b><br>📄 ${fn}`;
+        } else el("complete").innerText="✅ Download done";
+        setText("status","✅ Completed successfully.");
       });
+    }else pollTimer=setTimeout(pollProgress,1000);
+  }).catch(()=>setTimeout(pollProgress,1500));
+}
 
-      // expose getter for integration with startAudio()
-      window.getFormatMode = () => mode;
+function updatePhase(info){
+  if(!info)return;
+  const p=parseFloat((info.percent||"0").replace("%",""))||0;
+  el("video-bar").style.width=p+"%";
+  setText("video-percent",p.toFixed(1)+"%");
+  setText("video-eta","ETA: "+(info.eta||"—"));
+  setText("video-speed","Speed: "+(info.speed||"—"));
+  setText("video-size","Size: "+(info.size||"—"));
+  setText("video-status","Status: "+(info.status||"—"));
+}
 
-      // default: Auto (0). If you want Force MP3 default, call setMode(1) instead.
-      setMode(0);
-    })();
-
-    // Fetch video/audio format info
-    function fetchInfo(){
-      const url = getVal("url").trim();
-      if(!url){ setText("status","Please paste a valid URL."); return; }
-      setText("status","Fetching metadata…");
-      fetch("/fetch", { method:"POST", body: JSON.stringify({url}), headers: {"Content-Type":"application/json"} })
-        .then(r => r.json())
-        .then(()=> fetch("/info"))
-        .then(r => r.json())
-        .then(info => {
-          audioFormats = info.audio_formats || [];
-          videoFormats = info.video_formats || [];
-          populateDropdowns(info);
-          el("fetched-area").style.display = "block";
-          el("progress-section").style.display = "none";
-          setText("status", "Ready — choose formats or download directly.");
-          if(info.thumbnail){ el("thumbnail").src = info.thumbnail; el("thumbnail").style.display = "block"; }
-        })
-        .catch(e => {
-          console.error(e);
-          setText("status", "Failed to fetch info.");
-        });
-    }
-
-    // populateDropdowns: video options + audio options include abr, acodec, ext, size inline
-    function populateDropdowns(info){
-      const vsel = el("video"); const asel = el("audio");
-      vsel.innerHTML = ""; asel.innerHTML = "";
-      videoFormats = info.video_formats || [];
-      audioFormats = info.audio_formats || [];
-
-      // Video options: show resolution/ext/estimated size inline in option
-      videoFormats.forEach(f => {
-        const opt = document.createElement("option");
-        const res = f.resolution || (f.height ? `${f.height}p` : f.ext || "");
-        const sizeText = f.size ? ` — ${fmtSize(f.size)}` : "";
-        opt.value = f.format_id;
-        opt.text = `${res} — ${f.ext}${sizeText}`;
-        opt.dataset.size = f.size || "";
-        vsel.appendChild(opt);
-      });
-
-      // Audio options: show abr / acodec / ext / estimated size inline in option
-      audioFormats.forEach(f => {
-        const abrText = f.abr ? `${f.abr}kbps` : "best";
-        const codecText = f.acodec ? `${f.acodec}` : "";
-        const extText = f.ext ? `${f.ext}` : "";
-        const sizeText = f.filesize ? ` — ${fmtSize(f.filesize)}` : "";
-        const parts = [abrText, codecText, extText].filter(Boolean).join(" — ");
-        const opt = document.createElement("option");
-        opt.value = f.format_id;
-        opt.text = `${parts}${sizeText}`;
-        opt.dataset.filesize = f.filesize || "";
-        asel.appendChild(opt);
-      });
-
-      // select best defaults
-      if(vsel.options.length) vsel.selectedIndex = 0;
-      if(asel.options.length) asel.selectedIndex = 0;
-
-      // keep size preview boxes for accessibility/summary
-      updateSizePreviews();
-      el("audio").addEventListener("change", updateSizePreviews);
-      el("video").addEventListener("change", updateSizePreviews);
-
-      // update format-label based on top audio format
-      if(audioFormats.length){
-        const top = audioFormats[0];
-        const abr = top.abr || "best";
-        let format = "ogg";
-        if(abr >= 256) format = "flac";
-        else if(abr >= 192) format = "mp3";
-        setText("format-label", `Auto-selected format: ${format} (${abr}kbps)`);
-      } else {
-        setText("format-label","Format auto-select: based on bitrate.");
-      }
-    }
-
-    function updateSizePreviews(){
-      const aSel = el("audio").value;
-      const vSel = el("video").value;
-      const aInfo = audioFormats.find(f => f.format_id == aSel) || {};
-      const vInfo = videoFormats.find(f => f.format_id == vSel) || {};
-      setText("audio-size-preview", aInfo.filesize ? `Estimated size: ${fmtSize(aInfo.filesize)}` : "");
-      setText("video-size-preview", vInfo.size ? `Estimated size: ${fmtSize(vInfo.size)}` : "");
-    }
-
-    // Start audio-only download (reads 3-button selector)
-    function startAudio(){
-      resetProgressUI();
-      showSpinner("audio");
-      el("audio-section").style.display = "block";
-      el("video-section").style.display = "none";
-      el("merge-section").style.display = "none";
-      el("progress-section").style.display = "block";
-      el("cancel-btn").style.display = "inline-block";
-      el("reset-btn").style.display = "inline-block";
-
-      const mode = window.getFormatMode ? window.getFormatMode() : 0;
-      const payload = {
-        url: getVal("url"),
-        audio_id: getVal("audio") || null,
-        force_mp3: mode === 1,
-        lossless_only: mode === 2
-      };
-
-      fetch("/download_audio", { method:"POST", body: JSON.stringify(payload), headers: {"Content-Type":"application/json"} })
-        .then(r => r.json())
-        .then(data => {
-          if(data.status === "already_done"){
-            fetch("/done").then(r => r.json()).then(done => {
-              const name = done.filename ? done.filename.split(/[\\/]/).pop() : "";
-              showFinished("audio", name);
-            });
-          } else {
-            if(poller) clearInterval(poller);
-            poller = setInterval(updateProgress, 800);
-          }
-        })
-        .catch(() => {
-          showError("❌ Failed to start audio download.");
-          hideSpinner("audio");
-          el("cancel-btn").style.display = "none";
-        });
-    }
-
-    // Start video download (unchanged)
-    function startVideo(){
-      resetProgressUI();
-      showSpinner("video");
-      el("video-section").style.display = "block";
-      el("audio-section").style.display = "block";
-      el("merge-section").style.display = "block";
-      el("progress-section").style.display = "block";
-      el("cancel-btn").style.display = "inline-block";
-      el("reset-btn").style.display = "inline-block";
-
-      const payload = {
-        url: getVal("url"),
-        video_id: getVal("video") || null,
-        audio_id: getVal("audio") || null
-      };
-
-      fetch("/download_video", { method:"POST", body: JSON.stringify(payload), headers: {"Content-Type":"application/json"} })
-        .then(r => r.json())
-        .then(data => {
-          if(data.status === "already_done"){
-            fetch("/done").then(r => r.json()).then(done => {
-              const name = done.filename ? done.filename.split(/[\\/]/).pop() : "";
-              showFinished("video", name);
-              showFinished("audio", name);
-              showFinished("merge", name);
-            });
-          } else {
-            if(poller) clearInterval(poller);
-            poller = setInterval(updateProgress, 800);
-          }
-        })
-        .catch(() => {
-          showError("❌ Failed to start video download.");
-          hideSpinner("video");
-          el("cancel-btn").style.display = "none";
-        });
-    }
-
-    function cancelDownload(){
-      fetch("/cancel", { method:"POST" }).then(() => {
-        clearInterval(poller);
-        resetProgressUI();
-        hideSpinner("audio");
-        hideSpinner("video");
-        el("cancel-btn").style.display = "none";
-        setText("status","Download cancelled.");
-      });
-    }
-
-    function updateProgress(){
-      fetch("/progress").then(r => r.json()).then(data => {
-        if(data.video) {
-          el("video-section").style.display = "block";
-          updateBar("video", data.video);
-        }
-        if(data.audio) {
-          el("audio-section").style.display = "block";
-          updateBar("audio", data.audio);
-        }
-        if(data.merge) {
-          el("merge-section").style.display = "block";
-          updateBar("merge", data.merge);
-        }
-
-        const audioOnlyDone = data.audio && data.audio.status === "finished" && (!data.video || !data.video.status);
-        const videoModeDone = data.merge && data.merge.status === "finished";
-
-        if(audioOnlyDone || videoModeDone){
-          clearInterval(poller);
-          fetch("/done").then(r => r.json()).then(done => {
-            const name = done.filename ? done.filename.split(/[\\/]/).pop() : "";
-            setText("complete", `✅ Download complete: ${name}`);
-            hideSpinner("audio");
-            hideSpinner("video");
-            el("cancel-btn").style.display = "none";
-          });
-        }
-      }).catch(err => {
-        console.error('progress poll error', err);
-      });
-    }
-
-    function updateBar(phase, info){
-      const percentStr = (info.percent || "0%").toString();
-      const match = percentStr.match(/(\d+(\.\d+)?)/);
-      const percent = match ? match[1] : "0";
-      el(`${phase}-bar`).style.width = `${percent}%`;
-      setText(`${phase}-percent`, `${percent}%`);
-      setText(`${phase}-eta`, `ETA: ${info.eta || "—"}`);
-      setText(`${phase}-speed`, `Speed: ${info.speed || "—"}`);
-      setText(`${phase}-size`, `Size: ${info.size || "—"}`);
-      setText(`${phase}-status`, `Status: ${info.status || "—"}`);
-    }
-
-    function showFinished(phase, filename){
-      el(`${phase}-section`).style.display = "block";
-      el(`${phase}-bar`).style.width = "100%";
-      setText(`${phase}-percent`, "100%");
-      setText(`${phase}-eta`, "Done");
-      setText(`${phase}-speed`, "—");
-      setText(`${phase}-size`, "—");
-      setText(`${phase}-status`, "finished");
-      if(filename) setText("complete", `✅ Download complete: ${filename}`);
-      hideSpinner("audio"); hideSpinner("video");
-      el("cancel-btn").style.display = "none";
-    }
-
-    function resetUI(){
-      clearInterval(poller);
-      resetProgressUI();
-      hideSpinner("audio"); hideSpinner("video");
-      fetch("/reset", { method:"POST" }).then(()=> {
-        el("fetched-area").style.display = "none";
-        el("progress-section").style.display = "none";
-        el("cancel-btn").style.display = "none";
-        el("reset-btn").style.display = "none";
-        setText("status","🔄 Reset done. Ready for new fetch.");
-        setText("complete","");
-        setText("error","");
-      });
-    }
-
-    function resetProgressUI(){
-      ["video","audio","merge"].forEach(p => {
-        el(`${p}-bar`).style.width = "0%";
-        setText(`${p}-percent`, "0%");
-        setText(`${p}-eta`, `ETA: —`);
-        setText(`${p}-speed`, `Speed: —`);
-        setText(`${p}-size`, `Size: —`);
-        setText(`${p}-status`, `Status: —`);
-        el(`${p}-section`).style.display = "none";
-      });
-      el("progress-section").style.display = "none";
-      el("error").style.display = "none";
-      setText("complete","");
-    }
-
-    function showError(msg){
-      el("error").textContent = msg;
-      el("error").style.display = "block";
-    }
-
-    function showSpinner(which){
-      if(which === "audio"){
-        el("audio-btn").disabled = true;
-        el("audio-btn").innerHTML = `<span class="spinner"></span>Downloading Audio…`;
-      } else {
-        el("video-btn").disabled = true;
-        el("video-btn").innerHTML = `<span class="spinner"></span>Downloading Video…`;
-      }
-    }
-
-    function hideSpinner(which){
-      if(which === "audio"){
-        el("audio-btn").disabled = false;
-        el("audio-btn").textContent = "Download Audio";
-      } else if(which === "video"){
-        el("video-btn").disabled = false;
-        el("video-btn").textContent = "Download Video";
-      } else {
-        el("audio-btn").disabled = false; el("video-btn").disabled = false;
-        el("audio-btn").textContent = "Download Audio";
-        el("video-btn").textContent = "Download Video";
-      }
-    }
-
-    // initial
-    resetProgressUI();
-  </script>
+function resetBars(){
+  el("video-bar").style.width="0%";
+  ["video-percent","video-eta","video-speed","video-size","video-status"].forEach(id=>setText(id,"—"));
+}
+</script>
 </body>
 </html>
+
