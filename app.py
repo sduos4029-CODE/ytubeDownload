@@ -272,15 +272,16 @@ def reset():
     return jsonify({"status": "reset_done"})
 
 # ---------------- Startup ----------------
-def get_local_ip():
+def get_local_ip():`
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
         ip = s.getsockname()[0]
+    except Exception:
+        ip = "127.0.0.1"
+    finally:
         s.close()
-        return ip
-    except:
-        return "127.0.0.1"
+    return ip
 
 if __name__ == "__main__":
     reset_progress()
@@ -288,4 +289,9 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     ip = get_local_ip()
     print(f"Running on:\n - http://127.0.0.1:{port}\n - http://{ip}:{port}")
+    if ip and ip != "127.0.0.1":
+        print(f" - http://{ip}:{port}")
+    else:
+        print(" - (no LAN IP detected)")
+    
     app.run(host=host, port=port, debug=False, threaded=True)
