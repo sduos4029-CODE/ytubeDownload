@@ -1,7 +1,7 @@
 Flask
 yt-dlp
 ffmpeg
-request
+requests
 render_template
 jsonify
 send_file
