@@ -1,16 +1,8 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>YouTube Downloader — Multi Theme</title>
-<style>
+>
   :root {
-    --bg:#0f1115;--panel:#11131a;--card:#151721;
-    --text:#e6eef6;--muted:#98a0b3;
-    --accent1:#2dd4bf;--accent2:#22c55e;
+    --bg:#0f1115;--panel:#11131a;--card:#151721;--text:#e6eef6;
+    --muted:#98a0b3;--accent1:#2dd4bf;--accent2:#22c55e;
     --blur:0px;--shadow:none;--radius:10px;
-    transition: all .4s ease;
   }
   body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--text);}
   .container{max-width:920px;margin:28px auto;padding:20px;}
@@ -18,102 +10,93 @@
   select,input[type="text"],button{transition:all .3s ease;}
   input[type="text"],select{
     background:var(--panel);border:1px solid #222632;color:inherit;
-    padding:10px 12px;border-radius:var(--radius);backdrop-filter:blur(var(--blur));
+    padding:10px 12px;border-radius:var(--radius);
   }
   button{
     background:linear-gradient(90deg,var(--accent1),var(--accent2));
     border:none;color:#071019;padding:10px 12px;border-radius:var(--radius);
-    cursor:pointer;font-weight:600;box-shadow:var(--shadow);
-    display:flex;align-items:center;justify-content:center;gap:6px;
+    cursor:pointer;font-weight:600;display:flex;align-items:center;gap:6px;
   }
   button:hover{filter:brightness(1.1);}
   button.secondary{background:transparent;border:1px solid #2b3242;color:var(--muted);}
-  /* cancel red glow */
-  .cancel-glow{
-    border:1px solid #ff4747 !important;
-    color:#ffb3b3 !important;
-    box-shadow:0 0 10px rgba(255,50,50,0.6),0 0 25px rgba(255,50,50,0.4) !important;
-    animation:cancelPulse 1.2s infinite alternate;
-  }
-  @keyframes cancelPulse{
-    0%{box-shadow:0 0 10px rgba(255,50,50,0.5),0 0 20px rgba(255,50,50,0.3);}
-    100%{box-shadow:0 0 20px rgba(255,70,70,0.9),0 0 35px rgba(255,50,50,0.6);}
-  }
-  /* reset green pulse */
-  .reset-pulse{
-    animation:resetPulse 0.8s ease-out;
-    border:1px solid #22c55e !important;
-    color:#22c55e !important;
-    box-shadow:0 0 12px rgba(34,197,94,0.6) !important;
-  }
-  @keyframes resetPulse{
-    0%{box-shadow:0 0 0 rgba(34,197,94,0);}
-    50%{box-shadow:0 0 15px rgba(34,197,94,0.8);}
-    100%{box-shadow:0 0 0 rgba(34,197,94,0);}
-  }
   .panel{background:var(--card);border:1px solid #1e222b;padding:14px;border-radius:var(--radius);margin-top:14px;}
   .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
   .controls{margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;}
-  .progress{background:#0b0d11;border:1px solid #222632;border-radius:8px;height:22px;position:relative;overflow:hidden;}
+  .progress{background:#0b0d11;border:1px solid #222632;border-radius:8px;height:22px;position:relative;overflow:hidden;margin-top:4px;}
   .bar{height:100%;width:0%;background:linear-gradient(90deg,var(--accent1),var(--accent2));transition:width .35s ease;}
   .percent{position:absolute;left:50%;top:0;transform:translateX(-50%);font-size:12px;font-weight:700;color:#071019;line-height:22px;}
   .note{font-size:13px;color:var(--muted);margin-top:8px;}
-  .thumb{max-width:200px;border-radius:8px;margin-top:12px;border:1px solid #222632;display:none;}
+  .thumb{max-width:220px;border-radius:8px;margin-top:12px;display:none;border:1px solid #222632;}
   .metric{min-width:90px;color:var(--muted);font-size:13px;}
-  .spinner{width:14px;height:14px;border-radius:50%;border:2px solid #22313a;border-top:2px solid var(--accent2);display:inline-block;animation:spin .9s linear infinite;vertical-align:middle;}
-  .loading{animation:pulseGlow 1.2s infinite alternate ease-in-out;box-shadow:0 0 12px var(--accent2),0 0 25px var(--accent2);}
+  .spinner{width:14px;height:14px;border-radius:50%;border:2px solid #22313a;border-top:2px solid var(--accent2);display:inline-block;animation:spin .9s linear infinite;}
   @keyframes spin{to{transform:rotate(360deg);}}
-  @keyframes pulseGlow{0%{box-shadow:0 0 6px var(--accent2),0 0 15px var(--accent2);}100%{box-shadow:0 0 18px var(--accent2),0 0 35px var(--accent2);}}
+  @keyframes redGlow{0%{box-shadow:0 0 6px red;}100%{box-shadow:0 0 20px red;}}
+  @keyframes greenPulse{0%{box-shadow:0 0 8px #22c55e;}100%{box-shadow:0 0 20px #22c55e;}}
+  .cancel-glow{animation:redGlow 1s infinite alternate;}
+  .reset-pulse{animation:greenPulse 1s 2 alternate;}
+  .bubble{background:#2b1616;color:#ffd6d6;border-radius:6px;padding:8px 10px;font-size:13px;margin-top:8px;display:none;}
 </style>
 </head>
 <body>
 <div class="container">
-  <h1>YouTube Downloader</h1>
+  <div class="theme-switcher" style="display:flex;justify-content:flex-end;margin-bottom:16px;">
+    <label for="theme" style="margin-right:8px;">🎨 Theme:</label>
+    <select id="theme">
+      <option value="glass">Glassmorphism (Blue)</option>
+      <option value="neonorange">Neon Cyber (Orange)</option>
+      <option value="neon">Neon Cyber (Purple)</option>
+      <option value="flat">Flat Minimal (Gray)</option>
+    </select>
+  </div>
 
+  <h1>YouTube Downloader</h1>
   <div class="panel">
     <div class="row">
       <input id="url" type="text" placeholder="Paste YouTube URL" />
       <button id="fetch-btn" onclick="fetchInfo()">Fetch Info</button>
     </div>
+    <div id="bubble" class="bubble"></div>
 
-    <div id="fetched-area" style="display:none;margin-top:12px;">
+    <div id="info-area" style="display:none;margin-top:12px;">
       <div class="row">
         <div style="flex:1;">
-          <div class="note">🎬 Video formats</div>
+          <div class="note">🎞️ Video formats</div>
           <select id="video"></select>
         </div>
         <div style="flex:1;">
           <div class="note">🎧 Audio formats</div>
           <select id="audio"></select>
         </div>
-        <div style="min-width:180px;">
-          <img id="thumbnail" class="thumb" alt="Thumbnail" />
-        </div>
+        <div style="min-width:180px;"><img id="thumbnail" class="thumb" alt="thumbnail" /></div>
       </div>
-
       <div class="controls">
         <button id="audio-btn" onclick="startAudio()">Download Audio</button>
         <button id="video-btn" onclick="startVideo()">Download Video</button>
-        <button id="cancel-btn" class="secondary" onclick="cancelDownload()">Cancel</button>
-        <button id="reset-btn" class="secondary" onclick="resetApp()">Reset</button>
+        <button id="cancel-btn" class="secondary" onclick="cancelDownload()" style="display:none;">❌ Cancel</button>
+        <button id="reset-btn" class="secondary" onclick="resetApp()" style="display:none;">🔁 Reset</button>
       </div>
     </div>
 
-    <div id="status" class="note" style="margin-top:10px;">⏳ Waiting for input…</div>
-    <div id="complete"></div>
+    <div id="status" class="note">⏳ Waiting for input…</div>
+    <div id="complete" class="note" style="font-weight:600;margin-top:6px;"></div>
   </div>
 
-  <div id="progress-section" class="panel" style="display:none;">
+  <div id="progress-panel" class="panel" style="display:none;">
     <h3 style="margin:0 0 8px 0;">Progress</h3>
-    <div class="progress">
-      <div id="video-bar" class="bar"></div>
-      <div id="video-percent" class="percent">0%</div>
+    <div id="video-section">
+      <div class="note">Video Progress</div>
+      <div class="progress"><div id="video-bar" class="bar"></div><div id="video-percent" class="percent">0%</div></div>
+      <div class="row"><div class="metric" id="video-eta">ETA: —</div><div class="metric" id="video-speed">Speed: —</div><div class="metric" id="video-size">Size: —</div><div class="metric" id="video-status">Status: —</div></div>
     </div>
-    <div class="row" style="margin-top:8px;">
-      <div class="metric" id="video-eta">ETA: —</div>
-      <div class="metric" id="video-speed">Speed: —</div>
-      <div class="metric" id="video-size">Size: —</div>
-      <div class="metric" id="video-status">Status: —</div>
+    <div id="audio-section" style="margin-top:10px;">
+      <div class="note">Audio Progress</div>
+      <div class="progress"><div id="audio-bar" class="bar"></div><div id="audio-percent" class="percent">0%</div></div>
+      <div class="row"><div class="metric" id="audio-eta">ETA: —</div><div class="metric" id="audio-speed">Speed: —</div><div class="metric" id="audio-size">Size: —</div><div class="metric" id="audio-status">Status: —</div></div>
+    </div>
+    <div id="merge-section" style="margin-top:10px;">
+      <div class="note">Merging Progress</div>
+      <div class="progress"><div id="merge-bar" class="bar"></div><div id="merge-percent" class="percent">0%</div></div>
+      <div class="row"><div class="metric" id="merge-eta">ETA: —</div><div class="metric" id="merge-speed">Speed: —</div><div class="metric" id="merge-size">Size: —</div><div class="metric" id="merge-status">Status: —</div></div>
     </div>
   </div>
 </div>
@@ -121,120 +104,120 @@
 <script>
 const el=id=>document.getElementById(id);
 const setText=(id,t)=>{if(el(id))el(id).textContent=t;};
-let pollTimer;
 
-function fetchInfo(){
-  const url=el("url").value.trim();
-  if(!url)return alert("Enter URL!");
-  el("fetch-btn").innerHTML="Fetching <span class='spinner'></span>";
-  fetch("/fetch",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url})})
-  .then(r=>r.json()).then(()=>{
-    el("fetch-btn").innerText="Fetched!";
-    setText("status","✅ Info fetched. Ready to download.");
-    el("fetched-area").style.display="block";
-    loadFormats();
-  }).catch(()=>setText("status","⚠️ Fetch failed."));
+function showBubble(msg){const b=el("bubble");b.textContent=msg;b.style.display="block";setTimeout(()=>b.style.display="none",3000);}
+
+// ---- THEMES ----
+const themes={
+  glass:{"--bg":"#0e1119","--panel":"rgba(255,255,255,0.05)","--card":"rgba(255,255,255,0.07)","--text":"#eaf6ff","--muted":"#a7b3c8","--accent1":"#60a5fa","--accent2":"#38bdf8"},
+  neonorange:{"--bg":"#140800","--panel":"#1f0b00","--card":"#2c1000","--text":"#ffe8d1","--muted":"#ffb56b","--accent1":"#f97316","--accent2":"#fb923c"},
+  neon:{"--bg":"#0a0014","--panel":"#120025","--card":"#1c0038","--text":"#e6d9ff","--muted":"#aa8be8","--accent1":"#c026d3","--accent2":"#9333ea"},
+  flat:{"--bg":"#f3f3f3","--panel":"#fff","--card":"#fff","--text":"#111","--muted":"#666","--accent1":"#9ca3af","--accent2":"#6b7280"}
+};
+const root=document.documentElement;const select=el("theme");
+function applyTheme(t){const v=themes[t];for(const k in v)root.style.setProperty(k,v[k]);}
+select.addEventListener("change",()=>{applyTheme(select.value);localStorage.setItem("theme",select.value);});
+applyTheme(localStorage.getItem("theme")||"glass");select.value=localStorage.getItem("theme")||"glass";
+
+// ---- Spinner Control ----
+function showSpinner(btnId,text){
+  const btn=el(btnId);btn.disabled=true;btn.innerHTML=`<span class="spinner"></span>${text}`;
+}
+function hideSpinner(btnId,text){
+  const btn=el(btnId);btn.disabled=false;btn.textContent=text;
 }
 
-function loadFormats(){
-  fetch("/info").then(r=>r.json()).then(data=>{
-    const vsel=el("video"), asel=el("audio");
-    vsel.innerHTML=data.video_formats.map(f=>`<option value="${f.format_id}">${f.resolution || "—"} (${f.ext})</option>`).join("");
-    asel.innerHTML=data.audio_formats.map(f=>`<option value="${f.format_id}">${f.abr||"?"}kbps (${f.ext})</option>`).join("");
-    if(data.thumbnail){
-      const thumb=el("thumbnail");
-      thumb.src=data.thumbnail;
-      thumb.style.display="block";
+// ---- FETCH ----
+function fetchInfo(){
+  const url=el("url").value.trim();
+  if(!url){showBubble("Please enter a URL");return;}
+  showSpinner("fetch-btn","Fetching...");
+  fetch("/fetch",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url})})
+  .then(r=>r.json()).then(d=>{
+    hideSpinner("fetch-btn","Fetch Info");
+    if(d.status!=="info_fetched"){showBubble("Fetch failed");return;}
+    populateInfo(d.info);setText("status","✅ Info loaded. Choose format or start download.");
+  }).catch(e=>{hideSpinner("fetch-btn","Fetch Info");showBubble("Fetch error: "+e);});
+}
+
+function populateInfo(info){
+  el("info-area").style.display="block";
+  if(info.thumbnail){el("thumbnail").src=info.thumbnail;el("thumbnail").style.display="block";}
+  el("video").innerHTML=info.video_formats.map(f=>`<option value="${f.format_id}">${f.resolution||"?"} (${f.ext})</option>`).join("");
+  el("audio").innerHTML=info.audio_formats.map(f=>`<option value="${f.format_id}">${f.abr||"?"} kbps (${f.ext})</option>`).join("");
+}
+
+// ---- DOWNLOAD ----
+let mode=null;
+function startAudio(){
+  mode="audio";setText("complete","");
+  showSpinner("audio-btn","Downloading...");
+  fetch("/download_audio",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:el("url").value})});
+  el("progress-panel").style.display="block";
+  el("audio-section").style.display="block";
+  el("video-section").style.display="none";
+  el("merge-section").style.display="none";
+  el("cancel-btn").style.display="inline-flex";
+  el("reset-btn").style.display="inline-flex";
+  el("cancel-btn").classList.add("cancel-glow");
+  pollProgress();
+}
+function startVideo(){
+  mode="video";setText("complete","");
+  showSpinner("video-btn","Downloading...");
+  fetch("/download_video",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:el("url").value})});
+  el("progress-panel").style.display="block";
+  el("audio-section").style.display="block";
+  el("video-section").style.display="block";
+  el("merge-section").style.display="block";
+  el("cancel-btn").style.display="inline-flex";
+  el("reset-btn").style.display="inline-flex";
+  el("cancel-btn").classList.add("cancel-glow");
+  pollProgress();
+}
+
+function pollProgress(){
+  fetch("/progress").then(r=>r.json()).then(updateProgress);
+  if(mode) setTimeout(pollProgress,1000);
+}
+
+function updateProgress(p){
+  ["video","audio","merge"].forEach(type=>{
+    const bar=el(`${type}-bar`),per=el(`${type}-percent`);const s=p[type];if(!s)return;
+    bar.style.width=s.percent||"0%";per.textContent=s.percent||"0%";
+    setText(`${type}-eta`,"ETA: "+(s.eta||"—"));
+    setText(`${type}-speed`,"Speed: "+(s.speed||"—"));
+    setText(`${type}-size`,"Size: "+(s.size||"—"));
+    setText(`${type}-status`,"Status: "+(s.status||"—"));
+    if(s.percent==="100%"){checkDone();}
+  });
+}
+
+function checkDone(){
+  fetch("/done").then(r=>r.json()).then(d=>{
+    if(d.filename){
+      setText("complete","✅ Download done — "+d.filename);
+      hideSpinner("audio-btn","Download Audio");
+      hideSpinner("video-btn","Download Video");
+      el("cancel-btn").classList.remove("cancel-glow");
+      mode=null;
     }
   });
 }
 
-function startAudio(){ startDownload("/download_audio","audio-btn","Downloading Audio…"); }
-function startVideo(){ startDownload("/download_video","video-btn","Downloading Video…"); }
-
-function startDownload(endpoint,btn,text){
-  const url=el("url").value.trim();
-  if(!url)return alert("Enter URL!");
-  showSpinner(btn,text);
-  el("cancel-btn").classList.add("cancel-glow");
-  el("progress-section").style.display="block";
-  setText("status","⬇️ Download started...");
-  fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url})});
-  pollProgress();
-}
-
 function cancelDownload(){
   fetch("/cancel",{method:"POST"});
-  el("cancel-btn").classList.remove("cancel-glow");
-  clearTimeout(pollTimer);
-  resetBars();
-  setText("status","❌ Cancelled.");
-  el("complete").innerText="";
+  setText("status","❌ Cancelled");
   hideSpinner("audio-btn","Download Audio");
   hideSpinner("video-btn","Download Video");
+  el("cancel-btn").classList.remove("cancel-glow");
+  mode=null;
 }
-
 function resetApp(){
-  const rb=el("reset-btn");
-  rb.classList.add("reset-pulse");
-  setTimeout(()=>rb.classList.remove("reset-pulse"),800);
   fetch("/reset",{method:"POST"});
-  el("cancel-btn").classList.remove("cancel-glow");
-  resetBars();
-  el("complete").innerText="";
-  setText("status","🔁 Reset done. Ready.");
-  hideSpinner("audio-btn","Download Audio");
-  hideSpinner("video-btn","Download Video");
-}
-
-function showSpinner(id,text){
-  const b=el(id);
-  b.disabled=true;
-  b.classList.add("loading");
-  b.innerHTML=`<span class="spinner"></span>${text}`;
-}
-function hideSpinner(id,text){
-  const b=el(id);
-  b.disabled=false;
-  b.classList.remove("loading");
-  b.textContent=text;
-}
-
-function pollProgress(){
-  fetch("/progress").then(r=>r.json()).then(d=>{
-    updatePhase(d.video);
-    const done=Object.values(d).some(p=>p.status==="finished");
-    if(done){
-      fetch("/done").then(r=>r.json()).then(j=>{
-        el("cancel-btn").classList.remove("cancel-glow");
-        hideSpinner("audio-btn","Download Audio");
-        hideSpinner("video-btn","Download Video");
-        if(j.filename){
-          const fn=j.filename.split(/[\\/]/).pop();
-          el("complete").innerHTML=`✅ <b>Download done</b><br>📄 ${fn}`;
-        } else el("complete").innerText="✅ Download done";
-        setText("status","✅ Completed successfully.");
-      });
-    }else pollTimer=setTimeout(pollProgress,1000);
-  }).catch(()=>setTimeout(pollProgress,1500));
-}
-
-function updatePhase(info){
-  if(!info)return;
-  const p=parseFloat((info.percent||"0").replace("%",""))||0;
-  el("video-bar").style.width=p+"%";
-  setText("video-percent",p.toFixed(1)+"%");
-  setText("video-eta","ETA: "+(info.eta||"—"));
-  setText("video-speed","Speed: "+(info.speed||"—"));
-  setText("video-size","Size: "+(info.size||"—"));
-  setText("video-status","Status: "+(info.status||"—"));
-}
-
-function resetBars(){
-  el("video-bar").style.width="0%";
-  ["video-percent","video-eta","video-speed","video-size","video-status"].forEach(id=>setText(id,"—"));
+  el("reset-btn").classList.add("reset-pulse");
+  setTimeout(()=>location.reload(),600);
 }
 </script>
 </body>
 </html>
-
