@@ -35,6 +35,10 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
+      - name: Configure Android user directory
+        run: |
+          mkdir -p "$RUNNER_TEMP/flux-android-user"
+          echo "ANDROID_USER_HOME=$RUNNER_TEMP/flux-android-user" >> "$GITHUB_ENV"
       - name: Prepare pinned extractor
         run: |
           curl --fail --location --retry 3 --proto '=https' https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp -o "$RUNNER_TEMP/flux-upstream-ytdlp"
