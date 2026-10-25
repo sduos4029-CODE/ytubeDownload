@@ -208,6 +208,12 @@ private class DownloadTask(
                 }
                 if (Store.downloads.value.find { it.id == jobId }?.state in setOf("Complete", "Cancelled")) work.deleteRecursively()
                 Store.workFinished(jobId)
+                val final = Store.downloads.value.find { it.id == jobId }
+                when (final?.state) {
+                    "Cancelled" -> manager.cancel(notificationId)
+                    "Paused" -> post(notification(final.title, "Paused · downloaded data kept", final.progress.toInt(), false))
+                    "Queued" -> post(notification(final.title, final.detail, final.progress.toInt(), false))
+                }
             }
         }
     }
