@@ -1,7 +1,7 @@
-# Flux 1.3.0
+# Flux 1.4.0
 
-Signed non-debuggable release APK, versionCode 5. Existing private signing identity retained for in-place updates.
+Version code 6. Download limit 1–3 and Wi-Fi-only preference. Source is in android/; the pre-existing Python downloader is preserved at the repository root.
 
-Durable partial downloads; individual and queue-wide pause/resume/cancel controls; Download next; transient-error retries (30/60/120 seconds); recovery after process/network interruptions; persisted unfinished-save cleanup. Existing 4K merging, audio-source selection and Library presentation are retained.
+The GitHub workflow builds an unsigned, non-debuggable release APK and runs generated-media Android tests. Check the latest branch workflow for actual results; local compilation alone does not prove a successful GitHub build. The update signing identity is kept outside GitHub.
 
-Resume remains source-dependent. Full native-library security audit and live YouTube verification remain outstanding. See TEST_REPORT.md for exact evidence and limits.
+See TESTING.md for test method and SECURITY_1.2.md for remaining native security and signing limitations.

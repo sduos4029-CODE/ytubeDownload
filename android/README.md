@@ -2,7 +2,7 @@
 
 Native Kotlin / Jetpack Compose YouTube downloader for Android 8.0+.
 
-**Delivery status: version 1.3.0 compiled and tested with generated media on an Android 11 emulator.** Download, separate-stream merging, audio-only saving, progress states, cancellation, persistent history, and chosen-folder permissions passed the documented checks. Live YouTube search, thumbnails and downloads remain unverified because the environment proxy denied YouTube requests. See `TEST_REPORT.md` for exact coverage and limits. The installable signed APK is delivered separately as `Flux-v1.3.0.apk`.
+**Delivery status: version 1.4.0 compiled and tested with generated media on an Android 11 emulator.** Download, separate-stream merging, audio-only saving, progress states, cancellation, persistent history, and chosen-folder permissions passed the documented checks. Live YouTube search, thumbnails and downloads remain unverified because the environment proxy denied YouTube requests. See `TEST_REPORT.md` for exact coverage and limits. The installable signed APK is delivered separately as `Flux-v1.4.0.apk`.
 
 ## Get an APK with GitHub Actions
 
@@ -27,7 +27,14 @@ On Linux or macOS, with `curl`, `unzip`, and `sha256sum` installed:
 
 Output: `app/build/outputs/apk/release/app-release.apk`.
 
-## New in 1.3.0
+## New in 1.4.0
+
+- Settings supports 1–3 simultaneous downloads. Each task owns its process ID, progress and staging directory. Reducing the limit lets existing items finish; increasing it fills additional slots.
+- Wi-Fi-only preference prevents new transfers without active Wi-Fi and interrupts active network transfers when the connection changes. Partial data is retained and can resume when Wi-Fi returns. This is an application policy, not an OS firewall: bytes already in flight during a network handover cannot be guaranteed to be zero. VPNs that hide their underlying Wi-Fi transport may wait conservatively.
+- Both preferences persist across process restart, with existing installations defaulting to one transfer and any connected network.
+- GitHub Actions builds an unsigned release and runs generated-media emulator regression tests. The owner signs the CI artifact outside GitHub using the existing key; that key is never committed or uploaded to the runner.
+
+## Included from 1.3.0
 
 - One-at-a-time durable download queue with per-item pause/resume/cancel, Pause all / Resume all, Cancel all confirmation, Retry now and Download next.
 - Partial media lives in app-private no-backup storage rather than a disposable cache. Pause and recoverable interruptions preserve data; completion and cancellation clean it up. Failed attempts retain data for a manual retry until history is cleared. An uninstall still removes private partial data/history.

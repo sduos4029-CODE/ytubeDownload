@@ -66,3 +66,11 @@ adb shell am instrument -w -r -e restartOnly true com.flux.downloader.test/com.f
 Look for RESTART CHECKS PASSED. The in-process fixture server has a new loopback port after restart, so this test updates only the generated test URL to identical content. It verifies partial bytes and ledger survive the real process restart, source Range requests are made, audio samples remain exact, and partials are cleaned after success.
 
 For queue UI checks on the signed release APK (matching test certificate required), run with `-e queueUiOnly true`. This uses generated queue rows, checks Download next and Pause controls, Cancel all confirmation/abort, and preserves completed history. It leaves labelled paused rows for a screenshot; these are test fixtures, never shipped app content.
+
+## GitHub environment and Flux 1.4
+
+The repository workflow builds from android/, regenerates the checksum-pinned extractor, runs release transport checks and lint, then uses a fresh Android 11 x86-64 emulator. See tools/ci-device-checks.sh for the exact sequence and pass-marker assertions.
+
+`-e transferOnly true` runs the new concurrency/Wi-Fi suite. `-e transferPrefsOnly true` after an app process stop verifies settings persistence. `-e transferUiOnly true` checks the release Settings chips/switch. The Wi-Fi test simulates allowed/disallowed transport in a debug build; it does not toggle a real carrier network.
+
+Release builds are unsigned unless FLUX_SIGNING_STORE, FLUX_STORE_PASSWORD, FLUX_KEY_ALIAS and FLUX_KEY_PASSWORD are provided in the local environment. Keep keys outside the source tree. The GitHub unsigned artifact must be signed with the existing app identity for an in-place update; do not install a runner-signed UI-test APK over your own app.
