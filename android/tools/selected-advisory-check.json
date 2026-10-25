@@ -1,0 +1,38 @@
+{
+  "packages": [
+    [
+      "Maven",
+      "com.fasterxml.jackson.core:jackson-core",
+      "2.22.3"
+    ],
+    [
+      "Maven",
+      "com.fasterxml.jackson.core:jackson-databind",
+      "2.22.3"
+    ],
+    [
+      "Maven",
+      "commons-io:commons-io",
+      "2.22.0"
+    ],
+    [
+      "Maven",
+      "org.apache.commons:commons-compress",
+      "1.28.0"
+    ],
+    [
+      "PyPI",
+      "yt-dlp",
+      "2026.8.19"
+    ]
+  ],
+  "results": {
+    "results": [
+      {},
+      {},
+      {},
+      {},
+      {}
+    ]
+  }
+}

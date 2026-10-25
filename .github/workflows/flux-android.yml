@@ -1,0 +1,80 @@
+name: Flux Android build and device checks
+on:
+  push:
+    branches: [main, 'flux/**']
+    paths: ['android/**', '.github/workflows/flux-android.yml']
+  pull_request:
+    paths: ['android/**', '.github/workflows/flux-android.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: flux-android-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: android
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Prepare pinned extractor
+        run: |
+          curl --fail --location --retry 3 --proto '=https' https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp -o "$RUNNER_TEMP/flux-upstream-ytdlp"
+          python3 tools/package-extractor.py "$RUNNER_TEMP/flux-upstream-ytdlp"
+          python3 tools/test-network-policy.py
+      - name: Install SDK and build
+        run: |
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+          gradle --no-daemon --console=plain --max-workers=2 assembleDebug assembleDebugAndroidTest assembleRelease lintRelease
+          sha256sum app/build/outputs/apk/release/app-release-unsigned.apk > app/build/outputs/apk/release/app-release-unsigned.apk.sha256
+      - name: Enable KVM access
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Generated-media device checks
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: default
+          arch: x86_64
+          ram-size: 3072M
+          cores: 2
+          disable-animations: true
+          working-directory: android
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: bash tools/ci-device-checks.sh
+      - name: Upload unsigned build
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Flux-1.4.0-unsigned
+          path: |
+            android/app/build/outputs/apk/release/app-release-unsigned.apk
+            android/app/build/outputs/apk/release/app-release-unsigned.apk.sha256
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload verification reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Flux-verification-reports
+          path: |
+            android/test-results/
+            android/app/build/reports/
+          if-no-files-found: ignore
+          retention-days: 14
