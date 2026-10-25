@@ -1,0 +1,21 @@
+#!/usr/bin/env sh
+# Small, verified Gradle bootstrap for environments without Gradle installed.
+set -eu
+VERSION=8.10.2
+DIST_DIR="${GRADLE_USER_HOME:-$HOME/.gradle}/flux-bootstrap"
+GRADLE_BIN="$DIST_DIR/gradle-$VERSION/bin/gradle"
+if [ ! -x "$GRADLE_BIN" ]; then
+    mkdir -p "$DIST_DIR"
+    ARCHIVE="$DIST_DIR/gradle-$VERSION-bin.zip"
+    BASE="https://services.gradle.org/distributions/gradle-$VERSION-bin.zip"
+    curl --fail --location --retry 3 "$BASE" -o "$ARCHIVE"
+    EXPECTED=$(curl --fail --location --retry 3 "$BASE.sha256")
+    ACTUAL=$(sha256sum "$ARCHIVE" | cut -d ' ' -f 1)
+    if [ "$EXPECTED" != "$ACTUAL" ]; then
+        echo 'Gradle checksum mismatch; stopping.' >&2
+        exit 1
+    fi
+    unzip -q -o "$ARCHIVE" -d "$DIST_DIR"
+    rm "$ARCHIVE"
+fi
+exec "$GRADLE_BIN" "$@"
