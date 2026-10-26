@@ -246,7 +246,23 @@ class RuntimeChecks : Instrumentation() {
                         for(i in 0 until node.childCount) {find(node.getChild(i),label)?.let {return it}}
                         return null
                     }
-                    val button=find(uiAutomation.rootInActiveWindow,"Verify and connect") ?: error("Server setup control missing")
+                    fun scrollArea(node:android.view.accessibility.AccessibilityNodeInfo?):android.view.accessibility.AccessibilityNodeInfo? {
+                        if(node==null)return null
+                        if(node.isScrollable)return node
+                        for(i in 0 until node.childCount) {scrollArea(node.getChild(i))?.let {return it}}
+                        return null
+                    }
+                    var button:android.view.accessibility.AccessibilityNodeInfo?=null
+                    repeat(12) {
+                        if(button==null) {
+                            button=find(uiAutomation.rootInActiveWindow,"Verify and connect")
+                            if(button==null) {
+                                scrollArea(uiAutomation.rootInActiveWindow)?.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+                                Thread.sleep(300)
+                            }
+                        }
+                    }
+                    check(button!=null) {"Server setup control missing after scrolling"}
                     var parent:android.view.accessibility.AccessibilityNodeInfo?=button
                     while(parent!=null && !parent.isClickable)parent=parent.parent
                     check(parent!=null && !parent.isEnabled)
