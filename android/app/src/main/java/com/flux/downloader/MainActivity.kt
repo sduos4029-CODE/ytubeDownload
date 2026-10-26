@@ -152,7 +152,10 @@ private fun FluxApp(shared: String, model: FluxModel = viewModel()) {
                 }
             }
             when (page) {
-                0 -> Discover(model)
+                0 -> Discover(model) {
+                    if (Build.VERSION.SDK_INT >= 33) notification.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    page=1
+                }
                 1 -> QueuePage(jobs.filterNot { it.terminal })
                 2 -> LibraryPage(jobs.filter { it.terminal }, onRetry = { old ->
                     if (old.state == "Failed") Downloads.resume(context, old)
@@ -196,16 +199,18 @@ private fun FluxApp(shared: String, model: FluxModel = viewModel()) {
 }
 
 @Composable
-private fun Discover(model: FluxModel) {
+private fun Discover(model: FluxModel, onBatchQueued: ()->Unit) {
     val context=LocalContext.current
     var confirmItems by remember { mutableStateOf<List<Video>>(emptyList()) }
     if(confirmItems.isNotEmpty()) AlertDialog(onDismissRequest={confirmItems=emptyList()},title={Text("Download ${confirmItems.size} items?")},
         text={Text("Photos keep the best available source image. Videos use the highest reported resolution and best available source audio. Each item has separate progress in Downloads.")},
         confirmButton={TextButton(onClick={
             val items=confirmItems;confirmItems=emptyList()
-            items.forEach { Downloads.enqueue(context,MediaDownloads.prepare(it,Store.folder.value)) }
-            model.selectedItems=emptySet()
-            Toast.makeText(context,"${items.size} items added to Downloads",Toast.LENGTH_SHORT).show()
+            runCatching {
+                val jobs=items.map { MediaDownloads.prepare(it,Store.folder.value) }
+                jobs.forEach { Downloads.enqueue(context,it) }
+                model.selectedItems=emptySet();onBatchQueued()
+            }.onFailure { Toast.makeText(context,it.message ?: "Load this post again before downloading.",Toast.LENGTH_LONG).show() }
         }) {Text("Queue items")}},dismissButton={TextButton(onClick={confirmItems=emptyList()}) {Text("Keep browsing")}})
     val clipboard = LocalClipboardManager.current
     LazyColumn(contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {

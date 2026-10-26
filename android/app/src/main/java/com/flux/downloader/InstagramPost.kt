@@ -14,7 +14,7 @@ object InstagramPost {
         val videos = nodes.mapIndexed { index, node ->
             val video = Video.from(node,url)
             require(video.id.matches(Regex("[A-Za-z0-9_-]{1,100}"))) { "This item's identity was not reported. Load the post again." }
-            require(video.formats.isNotEmpty()) { "An item has no available photo/video formats. The post may require login or be unavailable." }
+            require(video.formats.isNotEmpty() && (video.isPhoto || video.formats.any { it.video })) { "An item has no available photo/video formats. The post may require login or be unavailable." }
             require(video.mediaKind in setOf("photo","video") && video.formats.all { it.photo == video.isPhoto }) { "The source returned inconsistent photo/video information." }
             video.copy(itemIndex=index+1,itemCount=nodes.size,
                 title=if(nodes.size>1) "${video.title} · Item ${index+1} of ${nodes.size}" else video.title)

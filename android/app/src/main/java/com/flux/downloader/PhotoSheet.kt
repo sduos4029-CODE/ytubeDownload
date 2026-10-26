@@ -1,6 +1,8 @@
 package com.flux.downloader
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -11,6 +13,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 
@@ -18,7 +21,7 @@ import coil.compose.AsyncImage
 fun PhotoSheet(video: Video, onDownload: () -> Unit) {
     val format=MediaDownloads.best(video)
     var zoom by remember(video.key) { mutableFloatStateOf(1f) }
-    Column(Modifier.fillMaxWidth().padding(20.dp).navigationBarsPadding(),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.fillMaxWidth().heightIn(max=LocalConfiguration.current.screenHeightDp.dp*.85f).verticalScroll(rememberScrollState()).padding(20.dp).navigationBarsPadding(),verticalArrangement=Arrangement.spacedBy(12.dp)) {
         Text("Photo preview",style=MaterialTheme.typography.headlineSmall)
         Text(video.title,maxLines=2)
         Box(Modifier.fillMaxWidth().height(320.dp).clipToBounds().background(Color.Black)

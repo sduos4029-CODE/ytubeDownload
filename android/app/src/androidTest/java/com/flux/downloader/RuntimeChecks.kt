@@ -212,7 +212,7 @@ class RuntimeChecks : Instrumentation() {
                     click("Discover");click("Select item 3");click("Download selected");click("Queue items")
                     check(Store.downloads.value.any {it.url==GalleryChecks.POST && it.mediaId=="PhotoThree" && it.state=="Paused"})
                     check(Store.downloads.value.none {it.url==GalleryChecks.POST && it.mediaId=="VideoTwo"})
-                    click("Download all");click("Keep browsing")
+                    click("Discover");click("Download all");click("Keep browsing")
                     check(Store.downloads.value.none {it.url==GalleryChecks.POST && it.mediaId=="VideoTwo"})
                     click("Download all");click("Queue items")
                     check(Store.downloads.value.any {it.url==GalleryChecks.POST && it.mediaId=="VideoTwo" && it.state=="Paused"})
