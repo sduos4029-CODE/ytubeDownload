@@ -24,6 +24,23 @@ class InstagramSessionChecks(private val instrumentation:Instrumentation,private
             return
         }
         InstagramSession.clear(app)
+        // Exercise Android's HTTP-only browser-cookie bridge locally. These
+        // generated cookies are cleared before any real network probe.
+        val set=java.util.concurrent.CountDownLatch(1)
+        instrumentation.runOnMainSync {
+            android.webkit.CookieManager.getInstance().apply {
+                setAcceptCookie(true)
+                setCookie("https://www.instagram.com/","sessionid=fixture-browser-session; Domain=.instagram.com; Path=/; Secure; HttpOnly") {set.countDown()}
+            }
+        }
+        check(set.await(10,java.util.concurrent.TimeUnit.SECONDS))
+        val browserHeader=android.webkit.CookieManager.getInstance().getCookie("https://www.instagram.com/").orEmpty()
+        check(InstagramSession.parse(browserHeader)["sessionid"]=="fixture-browser-session")
+        val cleared=java.util.concurrent.CountDownLatch(1)
+        instrumentation.runOnMainSync {
+            android.webkit.CookieManager.getInstance().removeAllCookies {android.webkit.CookieManager.getInstance().flush();cleared.countDown()}
+        }
+        check(cleared.await(10,java.util.concurrent.TimeUnit.SECONDS))
         check(runCatching {InstagramSession.parse("csrftoken=alone")}.isFailure)
         check(runCatching {InstagramSession.parse("sessionid=bad\nvalue")}.isFailure)
         check(runCatching {InstagramSession.parse("sessionid="+"x".repeat(40000))}.isFailure)
