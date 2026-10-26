@@ -7,6 +7,7 @@ import android.net.Uri
 import androidx.work.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 
 object QueueRules {
@@ -31,6 +32,9 @@ object Downloads {
     private const val QUEUE = "flux-download-queue"
     private const val TAG = "flux-queue"
 
+    /** Wait until the current scheduler has released its native children. */
+    suspend fun awaitIdle() { execution.withLock { } }
+
     fun workDir(context: Context, id: String): File {
         require(id.matches(Regex("[a-zA-Z0-9-]{1,80}"))) { "Invalid download identifier" }
         return File(context.noBackupFilesDir, "download-parts/$id")
@@ -42,6 +46,12 @@ object Downloads {
         Store.add(job.copy(state = if (paused) "Paused" else "Queued", queueOrder = Store.nextQueueOrder(),
             detail = if (paused) "Queue paused · ready when you resume" else "Waiting in download queue"))
         if (!paused) kick(context)
+    }
+    fun downloadAgain(context: Context, sourceId: String): RepeatOutcome {
+        Store.init(context)
+        val result = Store.repeatCompleted(sourceId)
+        if (result.created && !Store.queuePaused.value) kick(context)
+        return result
     }
 
     fun kick(context: Context) {

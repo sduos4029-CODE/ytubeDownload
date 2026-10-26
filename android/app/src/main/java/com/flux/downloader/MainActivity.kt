@@ -50,6 +50,9 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 
 private val Ink = Color(0xFF0C0D13)
 private val Panel = Color(0xFF171822)
@@ -108,6 +111,7 @@ class FluxModel(app: Application) : AndroidViewModel(app) {
 @Composable
 private fun FluxApp(shared: String, model: FluxModel = viewModel()) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val jobs by Store.downloads.collectAsState()
     val folder by Store.folder.collectAsState()
     var page by remember { mutableIntStateOf(0) }
@@ -153,6 +157,15 @@ private fun FluxApp(shared: String, model: FluxModel = viewModel()) {
                         detail = "Waiting to download", uri = "", pendingUri = "", bytes = 0, retryCount = 0, nextAttemptAt = 0,
                         folder = folder, created = System.currentTimeMillis()))
                     page = 1
+                }, onShowDownloads = { page = 1 }, onDownloadAgain = { old ->
+                    scope.launch {
+                        try {
+                            val result = withContext(Dispatchers.IO) { Downloads.downloadAgain(context, old.id) }
+                            if (!result.created) Toast.makeText(context, "Matching download already in Downloads", Toast.LENGTH_SHORT).show()
+                            page = 1
+                        } catch (e: CancellationException) { throw e
+                        } catch (e: Exception) { Toast.makeText(context, e.message ?: "Unable to queue this download.", Toast.LENGTH_LONG).show() }
+                    }
                 })
                 3 -> SettingsPage(folder, jobs.any { !it.terminal }, model,
                     onFolder = { chooseFolder.launch(folder.takeIf { it.isNotBlank() }?.let(Uri::parse)) },

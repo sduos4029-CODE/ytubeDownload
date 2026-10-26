@@ -2,7 +2,7 @@
 
 Native Kotlin / Jetpack Compose YouTube downloader for Android 8.0+.
 
-**Delivery status: version 1.7.0 implementation prepared; exact-commit build and runtime verification run in GitHub Actions.** Download, separate-stream merging, audio-only saving, progress states, cancellation, persistent history, and chosen-folder permissions passed the documented checks. Live YouTube search, thumbnails and downloads remain unverified because the environment proxy denied YouTube requests. See `TEST_REPORT.md` for exact coverage and limits. The installable signed APK is delivered separately as `Flux-v1.7.0.apk`.
+**Delivery status: version 1.8.0 implementation prepared; exact-commit build and runtime verification run in GitHub Actions.** Download, separate-stream merging, audio-only saving, progress states, cancellation, persistent history, and chosen-folder permissions passed the documented checks. Live YouTube search, thumbnails and downloads remain unverified because the environment proxy denied YouTube requests. See `TEST_REPORT.md` for exact coverage and limits. The installable signed APK is delivered separately as `Flux-v1.8.0.apk`.
 
 ## Get an APK with GitHub Actions
 
@@ -10,7 +10,7 @@ This repository keeps the app in android/. The root workflow .github/workflows/f
 
 1. Open Actions → Flux Android build and device checks.
 2. Select a successful run for your source commit.
-3. Download and unzip Flux-1.7.0-unsigned.
+3. Download and unzip Flux-1.8.0-unsigned.
 4. Verify app-release-unsigned.apk against its SHA-256 sidecar.
 5. Sign it outside GitHub with your persistent app key using Android Build Tools apksigner. Keep the owner key outside the repository and runner.
 
@@ -33,7 +33,15 @@ python3 tools/test-network-policy.py
 
 Output: `app/build/outputs/apk/release/app-release-unsigned.apk` unless FLUX_SIGNING_STORE and its signing variables are supplied.
 
-## New in 1.7.0
+## New in 1.8.0
+
+- Completed Library entries have Download again in the file menu, with confirmation before queuing. File details also offer Download replacement when a completed file cannot be opened.
+- A new job gets a fresh ID, clean progress/retry/save state and the current download folder. The original history, favourite mark and saved file remain untouched. A paused queue stays paused.
+- Matching active or paused jobs are reused by source video, format selection and audio mode instead of duplicating repeat requests. Show existing download only navigates; it does not queue a new copy if that job finishes meanwhile.
+- The same quality selection is reused, and yt-dlp refreshes source metadata/URLs during execution. If the old format is unavailable, select another format in Discover. Availability probes cannot distinguish every deleted/offline/revoked provider case.
+- Repeats accept validated HTTPS YouTube video links. No automatic recovery starts merely from opening file details, and no files are deleted by this feature.
+
+## Included from 1.7.0
 
 - Library file menus add/remove favourites, which persist across process restarts. A star marks favourites; the Favourites filter combines with title search, media filters and sorting.
 - File details show provider-reported name/size, recorded download size, MIME format, quality, duration, recorded audio metadata, added date, destination type and original source.

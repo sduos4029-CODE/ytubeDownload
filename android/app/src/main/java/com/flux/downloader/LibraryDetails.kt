@@ -54,7 +54,7 @@ object LibraryDetails {
 }
 
 @Composable
-fun LibraryDetailsDialog(job: Download, onDismiss: () -> Unit) {
+fun LibraryDetailsDialog(job: Download, onDownloadAgain: () -> Unit, onDismiss: () -> Unit) {
     val context = LocalContext.current
     var details by remember(job.id, job.uri) { mutableStateOf<SavedFileDetails?>(null) }
     var checking by remember { mutableStateOf(true) }
@@ -73,6 +73,9 @@ fun LibraryDetailsDialog(job: Download, onDismiss: () -> Unit) {
             else {
                 Text(if (job.uri.isBlank()) "No saved file" else if (details?.available == true) "File available" else "File unavailable", color = if (details?.available == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
                 if (job.uri.isNotBlank() && details?.available != true) Text("The file may have been moved or deleted, be offline, or need folder access again.")
+                if (job.state == "Complete" && details?.available != true && RepeatDownloads.sourceKey(job.url) != null) {
+                    TextButton(onClick = onDownloadAgain) { Text("Download replacement") }
+                }
             }
             Text("File name: ${details?.name ?: "Not reported"}")
             Text("Reported size: ${details?.bytes?.let(::sizeLabel) ?: "Unknown"}")

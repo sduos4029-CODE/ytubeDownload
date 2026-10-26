@@ -19,6 +19,9 @@ import java.util.concurrent.Executors
 
 /** Real-device integration checks. Media is generated locally; no third-party video is downloaded. */
 class RuntimeChecks : Instrumentation() {
+    private var repeatOnly = false
+    private var repeatRestartOnly = false
+    private var repeatUiOnly = false
     private var favouritesOnly = false
     private var favouritesRestartOnly = false
     private var favouritesUiOnly = false
@@ -38,6 +41,9 @@ class RuntimeChecks : Instrumentation() {
     private var restartOnly = false
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
+        repeatOnly = arguments?.getString("repeatOnly") == "true"
+        repeatRestartOnly = arguments?.getString("repeatRestartOnly") == "true"
+        repeatUiOnly = arguments?.getString("repeatUiOnly") == "true"
         favouritesOnly = arguments?.getString("favouritesOnly") == "true"
         favouritesRestartOnly = arguments?.getString("favouritesRestartOnly") == "true"
         favouritesUiOnly = arguments?.getString("favouritesUiOnly") == "true"
@@ -61,6 +67,11 @@ class RuntimeChecks : Instrumentation() {
     override fun onStart() {
         val result = Bundle()
         try {
+            if(repeatOnly || repeatRestartOnly) {
+                runBlocking { RepeatChecks(this@RuntimeChecks,::report).run(repeatRestartOnly) }
+                result.putString("stream",if(repeatRestartOnly) "REPEAT RESTART CHECKS PASSED\n" else "REPEAT CHECKS PASSED\n")
+                finish(Activity.RESULT_OK,result);return
+            }
             if (favouritesOnly || favouritesRestartOnly) {
                 runBlocking { FavouritesChecks(this@RuntimeChecks,::report).run(favouritesRestartOnly) }
                 result.putString("stream",if(favouritesRestartOnly) "FAVOURITES RESTART CHECKS PASSED\n" else "FAVOURITES CHECKS PASSED\n")
@@ -117,7 +128,12 @@ class RuntimeChecks : Instrumentation() {
             val activity = startActivitySync(Intent(targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
             check(!activity.isFinishing) { "Activity did not launch" }
             report("PASS: APK installs and MainActivity launches")
-            if (uiOnly || queueUiOnly || transferUiOnly || libraryUiOnly || progressUiOnly || favouritesUiOnly) {
+            if (uiOnly || queueUiOnly || transferUiOnly || libraryUiOnly || progressUiOnly || favouritesUiOnly || repeatUiOnly) {
+                // UI scenarios own synthetic job states. Drain WorkManager,
+                // including requests restored after a force-stop, first.
+                Store.setQueuePaused(true)
+                WorkManager.getInstance(targetContext).cancelAllWork().result.get()
+                runBlocking { withTimeout(60000) { Downloads.awaitIdle() } }
                 fun click(label: String) {
                     var forward = true
                     val deadline = System.currentTimeMillis() + 30000
@@ -144,6 +160,30 @@ class RuntimeChecks : Instrumentation() {
                         Thread.sleep(300)
                     }
                     error("UI control not found: $label")
+                }
+                if(repeatUiOnly) {
+                    Store.setQueuePaused(true)
+                    val item=LibraryChecks(this,::report).fixture("repeat-ui").copy(title="Repeat UI fixture",favourite=true)
+                    Store.add(item)
+                    val count=Store.downloads.value.size
+                    val original=targetContext.contentResolver.openInputStream(Uri.parse(item.uri))!!.use { it.readBytes() }
+                    click("Library");click("Compact");click("More actions for ${item.title}");click("Download again");click("Keep current file")
+                    check(Store.downloads.value.size==count)
+                    click("More actions for ${item.title}");click("Download again");click("Queue new download")
+                    val first=RepeatDownloads.matching(Store.downloads.value,item)!!
+                    check(first.id!=item.id && first.state=="Paused" && Store.downloads.value.size==count+1)
+                    check(original.contentEquals(targetContext.contentResolver.openInputStream(Uri.parse(item.uri))!!.use { it.readBytes() }))
+                    click("Library");click("More actions for ${item.title}");click("Download again");click("Show existing download")
+                    check(Store.downloads.value.size==count+1)
+                    Store.change(first.id,true) { it.copy(state="Cancelled") }
+                    Store.removeHistory(setOf(first.id))
+                    targetContext.contentResolver.delete(Uri.parse(item.uri),null,null)
+                    click("Library");click("More actions for ${item.title}");click("File details");click("Download replacement");click("Queue new download")
+                    val replacement=RepeatDownloads.matching(Store.downloads.value,item)!!
+                    check(replacement.id!=first.id && replacement.state=="Paused")
+                    check(Store.downloads.value.first { it.id==item.id }==item)
+                    report("PASS: release confirmation dismiss/queue, duplicate show-existing and missing-file recovery controls preserve the original history/favourite and respect paused queue")
+                    result.putString("stream","REPEAT UI CHECKS PASSED\n");finish(Activity.RESULT_OK,result);return
                 }
                 if (favouritesUiOnly) {
                     Store.setQueuePaused(true)
@@ -195,7 +235,8 @@ class RuntimeChecks : Instrumentation() {
                             if(area?.performAction(action)!=true)forward=!forward
                             Thread.sleep(300)
                         }
-                        error("Progress UI label not visible after scrolling: $label")
+                        val snapshot=Store.downloads.value.find { it.id==fixture.id }
+                        error("Progress UI label not visible after scrolling: $label; state=${snapshot?.state}; progress=${snapshot?.progress}")
                     }
                     listOf("Video stream","1 · Download","2 · Merge","3 · Save","Speed unavailable","Time unavailable").forEach(::requireVisible)
                     Store.change(fixture.id,true) { it.copy(state="Merging",detail="Combining video + selected audio · no quality loss") }
