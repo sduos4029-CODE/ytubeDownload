@@ -77,12 +77,12 @@ object Engine {
             addOption("--dump-single-json")
             addOption("--skip-download")
             addOption("--no-playlist")
-            addOption("--socket-timeout", "25")
+            addOption("--socket-timeout", "25"); addOption("--retries", "1"); addOption("--extractor-retries", "1")
             if (target.startsWith("ytsearch")) addOption("--flat-playlist")
         }
         val result = YoutubeDL.getInstance().execute(request)
         val json = JSONObject(result.out)
-        MediaLinks.validateInstagramMetadata(json, target)
+        if (MediaLinks.isInstagram(target)) return@withContext InstagramPost.parse(json,target)
         val entries = json.optJSONArray("entries")
         if (entries == null) listOf(Video.from(json, target)) else buildList {
             for (i in 0 until entries.length()) entries.optJSONObject(i)?.let { add(Video.from(it)) }
@@ -93,11 +93,12 @@ object Engine {
         initialize(context)
         val request = secureOptions(YoutubeDLRequest(video.url)).apply {
             addOption("--dump-single-json"); addOption("--skip-download")
-            addOption("--no-playlist"); addOption("--socket-timeout", "25")
+            addOption("--no-playlist"); addOption("--socket-timeout", "25"); addOption("--retries", "1"); addOption("--extractor-retries", "1")
         }
         val json=JSONObject(YoutubeDL.getInstance().execute(request).out)
-        MediaLinks.validateInstagramMetadata(json,video.url)
-        Video.from(json,video.url)
+        if (MediaLinks.isInstagram(video.url)) InstagramPost.parse(json,video.url).firstOrNull { it.id==video.id }
+            ?: error("This Instagram item is no longer available. Load the post again.")
+        else Video.from(json,video.url)
     }
 }
 
@@ -107,8 +108,9 @@ data class MediaFormat(
     val codec: String, val audioCodec: String = "", val sampleRate: Int = 0,
     val channels: Int = 0, val language: String = "", val note: String = "", val width: Int = 0
 ) {
-    val label: String get() = if (video) (if(height>0) "${if(width>0 && height>width) "${width}x$height" else "${height}p"}${if (fps > 30) " · ${fps}fps" else ""}" else "Source video") else
+    val label: String get() = if (photo) if(width>0 && height>0) "${width}x$height" else "Source photo" else if (video) (if(height>0) "${if(width>0 && height>width) "${width}x$height" else "${height}p"}${if (fps > 30) " · ${fps}fps" else ""}" else "Source video") else
         if (audioBitrate > 0) "$audioBitrate kbps" else "Source audio"
+    val photo get() = extension in setOf("jpg","jpeg","png","webp")
     val isDrc get() = id.contains("drc", true) || note.contains("DRC", true)
     val audioLabel get() = buildList {
         add(audioCodecLabel(audioCodec))
@@ -134,7 +136,9 @@ data class MediaFormat(
 
 data class Video(val id: String, val title: String, val author: String, val thumbnail: String,
     val seconds: Long, val formats: List<MediaFormat> = emptyList(), val sourceUrl: String = "",
-    val platform: MediaPlatform = MediaPlatform.YouTube) {
+    val platform: MediaPlatform = MediaPlatform.YouTube, val mediaKind: String = "video",
+    val itemIndex: Int = 1, val itemCount: Int = 1) {
+    val isPhoto get() = mediaKind == "photo"
     val url get() = sourceUrl.ifBlank { "https://www.youtube.com/watch?v=$id" }
     val key get() = "${platform.name}:$id"
     companion object {
@@ -150,7 +154,7 @@ data class Video(val id: String, val title: String, val author: String, val thum
                 o.optString("thumbnail").takeIf { it.startsWith("https://") }
                     ?: if(platform==MediaPlatform.YouTube) "https://i.ytimg.com/vi/$id/hqdefault.jpg" else "", o.optDouble("duration", 0.0).toLong(),
                 (0 until formats.length()).mapNotNull { formats.optJSONObject(it)?.let { format -> MediaFormat.from(format,platform==MediaPlatform.Instagram) } }
-                    .filter { it.id.isNotBlank() && (it.video || it.audio) && it.extension !in listOf("mhtml", "none") },link?.url.orEmpty(),platform)
+                    .filter { it.id.isNotBlank() && (it.video || it.audio) && it.extension !in listOf("mhtml", "none") },link?.url.orEmpty(),platform,o.optString("flux_media_kind","video"))
         }
     }
 }
@@ -163,8 +167,10 @@ data class Download(
     val created: Long = System.currentTimeMillis(), val replaceEmbeddedAudio: Boolean = false,
     val audioDescription: String = "", val bytes: Long = 0,
     val queueOrder: Long = created, val retryCount: Int = 0, val nextAttemptAt: Long = 0,
-    val pendingUri: String = "", val favourite: Boolean = false
+    val pendingUri: String = "", val favourite: Boolean = false,
+    val mediaKind: String = "video", val mediaId: String = ""
 ) {
+    val isPhoto get() = mediaKind == "photo" || mime.startsWith("image/")
     val terminal get() = state in listOf("Complete", "Failed", "Cancelled")
     fun json() = JSONObject().apply {
         put("id", id); put("url", url); put("title", title); put("thumbnail", thumbnail)
@@ -174,7 +180,7 @@ data class Download(
         put("mime", mime); put("created", created)
         put("replaceEmbeddedAudio", replaceEmbeddedAudio); put("audioDescription", audioDescription); put("bytes", bytes)
         put("queueOrder", queueOrder); put("retryCount", retryCount); put("nextAttemptAt", nextAttemptAt); put("pendingUri", pendingUri)
-        put("favourite", favourite)
+        put("favourite", favourite); put("mediaKind",mediaKind); put("mediaId",mediaId)
     }
     companion object {
         fun from(o: JSONObject) = Download(o.getString("id"), o.getString("url"), o.getString("title"),
@@ -182,7 +188,7 @@ data class Download(
             o.optLong("duration"), o.optString("folder"), o.getString("state"), o.optDouble("progress").toFloat(),
             o.optString("detail"), o.optString("uri"), o.optString("mime"), o.optLong("created"),
             o.optBoolean("replaceEmbeddedAudio", false), o.optString("audioDescription", ""), o.optLong("bytes", 0),
-            o.optLong("queueOrder", o.optLong("created")), o.optInt("retryCount", 0), o.optLong("nextAttemptAt", 0), o.optString("pendingUri", ""), o.optBoolean("favourite", false))
+            o.optLong("queueOrder", o.optLong("created")), o.optInt("retryCount", 0), o.optLong("nextAttemptAt", 0), o.optString("pendingUri", ""), o.optBoolean("favourite", false), o.optString("mediaKind","video"), o.optString("mediaId",""))
     }
 }
 

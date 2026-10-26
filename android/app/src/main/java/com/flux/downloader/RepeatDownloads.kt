@@ -23,7 +23,7 @@ object RepeatDownloads {
     fun matching(jobs: List<Download>, original: Download): Download? {
         val source = sourceKey(original.url) ?: return null
         return jobs.firstOrNull { !it.terminal && sourceKey(it.url) == source && it.selector == original.selector &&
-            it.audioOnly == original.audioOnly && it.replaceEmbeddedAudio == original.replaceEmbeddedAudio }
+            it.mediaId == original.mediaId && it.mediaKind == original.mediaKind && it.audioOnly == original.audioOnly && it.replaceEmbeddedAudio == original.replaceEmbeddedAudio }
     }
     fun prepare(original: Download, folder: String, now: Long = System.currentTimeMillis()): Download {
         require(original.state == "Complete") { "Download again is available for completed history entries." }

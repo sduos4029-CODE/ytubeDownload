@@ -13,14 +13,18 @@ root = Path(__file__).resolve().parent.parent
 upstream = Path(sys.argv[1]).read_bytes()
 assert hashlib.sha256(upstream).hexdigest() == UPSTREAM_SHA256, 'Unreviewed upstream artifact'
 policy = (root / 'tools/flux_network_policy.py').read_text()
+instagram = (root / 'tools/flux_instagram.py').read_text()
 for variant in ('main', 'debug'):
     out = io.BytesIO()
     with zipfile.ZipFile(io.BytesIO(upstream)) as source, zipfile.ZipFile(out, 'w') as target:
         for info in source.infolist():
             data = source.read(info.filename)
             if info.filename == '__main__.py':
-                data = data.replace(b"    yt_dlp.main()", b"    import flux_network_policy\n    flux_network_policy.install()\n    yt_dlp.main()")
+                data = data.replace(b"    yt_dlp.main()", b"    import flux_network_policy\n    flux_network_policy.install()\n    import flux_instagram\n    flux_instagram.install()\n    yt_dlp.main()")
             target.writestr(info, data)
+        extra = zipfile.ZipInfo('flux_instagram.py', (2026, 10, 26, 0, 0, 0))
+        extra.compress_type = zipfile.ZIP_DEFLATED
+        target.writestr(extra, instagram)
         info = zipfile.ZipInfo('flux_network_policy.py', (2026, 10, 15, 0, 0, 0))
         info.compress_type = zipfile.ZIP_DEFLATED
         target.writestr(info, policy.replace('ALLOW_LOOPBACK_TESTS = False', 'ALLOW_LOOPBACK_TESTS = True') if variant == 'debug' else policy)

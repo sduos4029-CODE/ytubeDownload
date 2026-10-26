@@ -31,6 +31,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -84,14 +86,15 @@ class FluxModel(app: Application) : AndroidViewModel(app) {
     var error by mutableStateOf<String?>(null)
     var selected by mutableStateOf<Video?>(null)
     var inspecting by mutableStateOf(false)
+    var selectedItems by mutableStateOf(setOf<String>())
     fun search() {
         if (busy || query.isBlank()) return
-        busy = true; error = null; results = emptyList(); selected = null
+        busy = true; error = null; results = emptyList(); selected = null; selectedItems = emptySet()
         viewModelScope.launch {
             try {
                 results = Engine.search(getApplication(), query)
                 if (results.isEmpty()) error = "No videos found. Try another search."
-            } catch (e: Exception) { error = e.message?.takeLast(350) ?: "Search failed. Check your connection." }
+            } catch (e: Exception) { error = SourceFailures.message(runCatching { Engine.target(query) }.getOrDefault(""),e.message.orEmpty()) ?: e.message?.takeLast(350) ?: "Search failed. Check your connection." }
             finally { busy = false }
         }
     }
@@ -149,7 +152,10 @@ private fun FluxApp(shared: String, model: FluxModel = viewModel()) {
                 }
             }
             when (page) {
-                0 -> Discover(model)
+                0 -> Discover(model) {
+                    if (Build.VERSION.SDK_INT >= 33) notification.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    page=1
+                }
                 1 -> QueuePage(jobs.filterNot { it.terminal })
                 2 -> LibraryPage(jobs.filter { it.terminal }, onRetry = { old ->
                     if (old.state == "Failed") Downloads.resume(context, old)
@@ -174,13 +180,14 @@ private fun FluxApp(shared: String, model: FluxModel = viewModel()) {
         }
     }
     model.selected?.let { video ->
-        ModalBottomSheet(onDismissRequest = { model.selected = null }, containerColor = Panel) {
-            FormatSheet(video) { format, selectedAudio ->
-                val audioOnly = !format.video
-                val plan = AudioSelection.plan(video, format, selectedAudio)
-                Downloads.enqueue(context, Download(url = video.url, title = video.title, thumbnail = video.thumbnail,
-                    selector = plan.selector, label = format.label, audioOnly = audioOnly, duration = video.seconds, folder = folder,
-                    replaceEmbeddedAudio = plan.replaceEmbeddedAudio, audioDescription = plan.description))
+        ModalBottomSheet(onDismissRequest = { model.selected = null }, containerColor = Panel,
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+            if(video.isPhoto) PhotoSheet(video) {
+                Downloads.enqueue(context,MediaDownloads.prepare(video,folder))
+                if (Build.VERSION.SDK_INT >= 33) notification.launch(Manifest.permission.POST_NOTIFICATIONS)
+                model.selected = null; page = 1
+            } else FormatSheet(video) { format, selectedAudio ->
+                Downloads.enqueue(context, MediaDownloads.prepare(video,folder,format,selectedAudio))
                 if (Build.VERSION.SDK_INT >= 33) notification.launch(Manifest.permission.POST_NOTIFICATIONS)
                 model.selected = null; page = 1
             }
@@ -193,7 +200,19 @@ private fun FluxApp(shared: String, model: FluxModel = viewModel()) {
 }
 
 @Composable
-private fun Discover(model: FluxModel) {
+private fun Discover(model: FluxModel, onBatchQueued: ()->Unit) {
+    val context=LocalContext.current
+    var confirmItems by remember { mutableStateOf<List<Video>>(emptyList()) }
+    if(confirmItems.isNotEmpty()) AlertDialog(onDismissRequest={confirmItems=emptyList()},title={Text("Download ${confirmItems.size} items?")},
+        text={Text("Photos keep the best available source image. Videos use the highest reported resolution and best available source audio. Each item has separate progress in Downloads.")},
+        confirmButton={TextButton(onClick={
+            val items=confirmItems;confirmItems=emptyList()
+            runCatching {
+                val jobs=items.map { MediaDownloads.prepare(it,Store.folder.value) }
+                jobs.forEach { Downloads.enqueue(context,it) }
+                model.selectedItems=emptySet();onBatchQueued()
+            }.onFailure { Toast.makeText(context,it.message ?: "Load this post again before downloading.",Toast.LENGTH_LONG).show() }
+        }) {Text("Queue items")}},dismissButton={TextButton(onClick={confirmItems=emptyList()}) {Text("Keep browsing")}})
     val clipboard = LocalClipboardManager.current
     LazyColumn(contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
@@ -222,7 +241,7 @@ private fun Discover(model: FluxModel) {
                         else Icon(Icons.Rounded.Search, null, Modifier.size(20.dp))
                         Text(if (model.busy) "Finding your video…" else "Find video", Modifier.padding(start = 10.dp), fontWeight = FontWeight.Bold)
                     }
-                    Text("Words search YouTube. Instagram supports direct public single-video posts/Reels. Photos, multi-item posts, Stories, profiles and Threads are not supported yet.",
+                    Text("Words search YouTube. Paste a public Instagram Reel, photo or carousel post link. Profiles, Stories, Threads and login-required posts are not supported.",
                         color = Muted, fontSize = 11.sp, lineHeight = 16.sp, modifier = Modifier.padding(top = 12.dp))
                 }
             }
@@ -237,7 +256,27 @@ private fun Discover(model: FluxModel) {
         if (model.inspecting) item { LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Lilac) }
         if (model.results.isNotEmpty()) {
             item { SectionTitle("Found for you", "${model.results.size} result${if (model.results.size > 1) "s" else ""}") }
-            items(model.results, key = { it.key }) { video -> VideoCard(video, model.inspecting) { model.inspect(video) } }
+            if(model.results.size>1 && model.results.all { it.platform==MediaPlatform.Instagram }) item {
+                Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                    Text("Choose photos and videos",fontWeight=FontWeight.Bold)
+                    Text("${model.selectedItems.size} selected · up to 20 items per post",color=Muted,fontSize=12.sp)
+                    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick={confirmItems=model.results}) {Text("Download all")}
+                        FilledTonalButton(enabled=model.selectedItems.isNotEmpty(),onClick={confirmItems=model.results.filter { it.key in model.selectedItems }}) {Text("Download selected")}
+                    }
+                }
+            }
+            items(model.results, key = { it.key }) { video ->
+                Column {
+                    if(video.itemCount>1) Row(verticalAlignment=Alignment.CenterVertically) {
+                        Checkbox(checked=video.key in model.selectedItems,onCheckedChange={ checked ->
+                            model.selectedItems=if(checked) model.selectedItems+video.key else model.selectedItems-video.key
+                        },modifier=Modifier.semantics { contentDescription="Select item ${video.itemIndex}" })
+                        Text("Item ${video.itemIndex} of ${video.itemCount} · ${if(video.isPhoto) "Photo" else "Video"}")
+                    }
+                    VideoCard(video, model.inspecting) { model.inspect(video) }
+                }
+            }
         } else if (!model.busy) {
             item {
                 Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Brush.linearGradient(listOf(Color(0xFF25213B), Panel))).padding(22.dp)) {
@@ -271,7 +310,7 @@ private fun VideoCard(video: Video, disabled: Boolean, select: () -> Unit) {
                 Text(video.title, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 22.sp)
                 Text("${video.platform.label} · ${video.author}", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
                 FilledTonalButton(onClick = select, enabled = !disabled, modifier = Modifier.fillMaxWidth().padding(top = 12.dp), shape = RoundedCornerShape(12.dp)) {
-                    Icon(Icons.Rounded.Tune, null, Modifier.size(17.dp)); Text("Choose quality", Modifier.padding(start = 8.dp))
+                    Icon(Icons.Rounded.Tune, null, Modifier.size(17.dp)); Text(if(video.isPhoto) "View photo" else "Choose quality", Modifier.padding(start = 8.dp))
                 }
             }
         }

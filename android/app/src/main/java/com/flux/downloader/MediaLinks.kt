@@ -30,12 +30,12 @@ object MediaLinks {
     }.getOrNull()
     fun target(input: String): String {
         val text=input.trim()
-        require(text.isNotEmpty()) { "Paste a YouTube link, public Instagram video link, or enter a YouTube search." }
+        require(text.isNotEmpty()) { "Paste a YouTube link, public Instagram post link, or enter a YouTube search." }
         val looksLikeLink=text.contains("://") || text.startsWith("www.",true) ||
             (youtube+instagram+setOf("threads.net","threads.com","www.threads.net","www.threads.com")).any { text.startsWith("$it/",true) }
         if(!looksLikeLink)return "ytsearch5:$text"
         val url=if(text.contains("://"))text else "https://$text"
-        return parse(url)?.url ?: throw IllegalArgumentException("Use a valid HTTPS YouTube link or a direct public Instagram Reel/video post link. Photos, profiles, Stories and Threads are not supported yet.")
+        return parse(url)?.url ?: throw IllegalArgumentException("Use a valid HTTPS YouTube link or a direct public Instagram Reel, photo or carousel post link. Stories, profiles, profile galleries and Threads are not supported yet.")
     }
     fun shared(text: String): String {
         val urls=Regex("https://[^\\s<>]+",RegexOption.IGNORE_CASE).findAll(text).map { it.value.trimEnd(')',']','.',',','!') }.toList()
@@ -51,11 +51,6 @@ object MediaLinks {
     fun isInstagram(url: String) = parse(url)?.platform == MediaPlatform.Instagram
     fun validateInstagramMetadata(json: org.json.JSONObject, url: String) {
         if(!isInstagram(url))return
-        require(json.optJSONArray("entries")==null && json.optString("_type") !in setOf("playlist","multi_video")) { "Multi-item Instagram posts are not supported yet. Use a single-video Reel or post." }
-        val formats=json.optJSONArray("formats")
-        require(formats!=null && (0 until formats.length()).any { index ->
-            val f=formats.optJSONObject(index)
-            f!=null && f.optString("ext") in setOf("mp4","webm","mov","mkv")
-        }) { "No public Instagram video formats were returned. Photo posts, private/login-required posts and profiles are not supported." }
+        InstagramPost.parse(json,url)
     }
 }

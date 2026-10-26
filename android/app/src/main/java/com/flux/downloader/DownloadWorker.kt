@@ -144,12 +144,17 @@ private class DownloadTask(
             checkControl()
             val request = Engine.secureOptions(YoutubeDLRequest(job.url)).apply {
                 addOption("--no-playlist"); addOption("--no-mtime"); addOption("--newline")
-                if(MediaLinks.isInstagram(job.url)) addOption("--playlist-items", "1")
+                if(MediaLinks.isInstagram(job.url)) {
+                    if(job.mediaId.isNotBlank()) {
+                        require(job.mediaId.matches(Regex("[A-Za-z0-9_-]{1,100}"))) { "Invalid Instagram item identity. Load the post again." }
+                        addOption("--extractor-args", "instagram:flux_item_id=${job.mediaId}")
+                    } else addOption("--playlist-items", "1")
+                }
                 addOption("--progress"); addOption("--progress-template", TransferProgress.TEMPLATE)
                 addOption("--continue"); addOption("--part"); addOption("--abort-on-unavailable-fragments")
                 addOption("--socket-timeout", "30"); addOption("--retries", "2"); addOption("--fragment-retries", "2")
                 addOption("--concurrent-fragments", "3"); addOption("--format", job.selector)
-                if (!job.audioOnly) addOption("--merge-output-format", "mkv")
+                if (!job.audioOnly && !job.isPhoto) addOption("--merge-output-format", "mkv")
                 if (job.replaceEmbeddedAudio) {
                     addOption("--audio-multistreams")
                     addOption("--postprocessor-args", "Merger+ffmpeg_o:-map -0:a? -disposition:a:0 default")
@@ -160,14 +165,21 @@ private class DownloadTask(
             checkControl()
             val result = work.listFiles()?.filter { it.name.matches(Regex("media\\.[a-zA-Z0-9]+")) }
                 ?.singleOrNull() ?: error("No completed media file was produced. Try another format.")
-            require(result.extension.lowercase() in setOf("mkv", "mp4", "webm", "m4a", "mp3", "opus", "ogg", "flac", "wav", "aac", "mov")) {
+            require(result.extension.lowercase() in setOf("mkv", "mp4", "webm", "m4a", "mp3", "opus", "ogg", "flac", "wav", "aac", "mov", "jpg", "jpeg", "png", "webp")) {
                 "The source returned an unsupported file type. No file was saved."
+            }
+            val imageExtension = result.extension.lowercase() in setOf("jpg","jpeg","png","webp")
+            require(imageExtension == job.isPhoto) { "The source changed its media type. Load the post again." }
+            if(job.isPhoto) {
+                val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                android.graphics.BitmapFactory.decodeFile(result.absolutePath,bounds)
+                require(bounds.outWidth>0 && bounds.outHeight>0 && bounds.outMimeType==PhotoTypes.mime(result.extension)) { "The source did not return a valid photo. No file was saved." }
             }
             TransferProgress.clear(jobId)
             update("Saving", 0f, "Saving to your download folder")
             val (uri, mime) = save(result, job)
             checkControl()
-            val measuredAudio = inspectSavedAudio(uri)
+            val measuredAudio = if(job.isPhoto) "" else inspectSavedAudio(uri)
             if (!Store.finishDownload(jobId, uri.toString(), mime, result.length(), measuredAudio)) throw UserStopped()
             post(notification(job.title, "Download complete", 100, false))
         } catch (cancel: CancellationException) {
@@ -189,7 +201,7 @@ private class DownloadTask(
                     }
                     post(notification(job.title, "Waiting to retry · downloaded data kept", current.progress.toInt(), false))
                 } else {
-                    val readable = when {
+                    val readable = SourceFailures.message(job.url,message) ?: when {
                         MediaLinks.isInstagram(job.url) && (message.contains("login",true) || message.contains("sign in",true) || message.contains("403") || message.contains("429")) -> "Instagram restricted this request. Try an accessible public single-video post or retry later. Login-required/private posts are not supported."
                         message.contains("Sign in", true) || message.contains("bot", true) -> "${MediaLinks.parse(job.url)?.platform?.label ?: "The source"} restricted this request. Try a public video or check for a Flux update."
                         message.contains("format is not available", true) -> "This format is no longer available. Search the video again."
@@ -249,7 +261,7 @@ private class DownloadTask(
                     val now = System.currentTimeMillis()
                     val merging = line.startsWith("[Merger]", true) || line.startsWith("Merging formats", true)
                     val firstMerge = merging && state != "Merging"
-                    val sample = TransferProgress.parse(line)
+                    val sample = TransferProgress.parse(line)?.let { if(job.isPhoto) it.copy(stream="Photo") else it }
                     val previous = TransferProgress.live.value[jobId]
                     val changedStream = sample != null && (sample.format != previous?.format || sample.stream != previous?.stream)
                     if (firstMerge || (sample != null && state != "Merging" && (changedStream || now - lastUpdate > 650 || sample.percent == 100f))) {
@@ -314,6 +326,7 @@ private class DownloadTask(
             "mkv" -> "video/x-matroska"; "mp4" -> "video/mp4"
             "webm" -> if (job.audioOnly) "audio/webm" else "video/webm"
             "m4a" -> "audio/mp4"; "mp3" -> "audio/mpeg"; "opus", "ogg" -> "audio/ogg"
+            "jpg", "jpeg", "png" -> PhotoTypes.mime(file.extension); "webp" -> "image/webp"
             "flac" -> "audio/flac"; "wav" -> "audio/wav"; "aac" -> "audio/aac"; "mov" -> "video/quicktime"
             else -> "application/octet-stream"
         }

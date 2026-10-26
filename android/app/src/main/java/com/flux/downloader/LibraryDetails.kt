@@ -77,8 +77,8 @@ fun LibraryDetailsDialog(job: Download, onDownloadAgain: () -> Unit, onDismiss: 
             if (job.bytes > 0) Text("Recorded size: ${sizeLabel(job.bytes)}")
             Text("Saved format: ${job.mime.ifBlank { "Not reported" }}")
             Text("Quality: ${job.label}")
-            Text("Duration: ${if (job.duration > 0) durationLabel(job.duration) else "Not reported"}")
-            Text("Recorded audio: ${job.audioDescription.ifBlank { "Not reported" }}")
+            Text("Duration: ${if(job.isPhoto) "Not applicable" else if (job.duration > 0) durationLabel(job.duration) else "Not reported"}")
+            Text("Recorded audio: ${if(job.isPhoto) "Not applicable" else job.audioDescription.ifBlank { "Not reported" }}")
             Text("Added: ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(job.created))}")
             Text("Destination: ${if (job.folder.isBlank()) "Default download folder" else "Selected download folder"}")
             if (source != null) {

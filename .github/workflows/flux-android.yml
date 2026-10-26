@@ -44,6 +44,7 @@ jobs:
           curl --fail --location --retry 3 --proto '=https' https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp -o "$RUNNER_TEMP/flux-upstream-ytdlp"
           python3 tools/package-extractor.py "$RUNNER_TEMP/flux-upstream-ytdlp"
           python3 tools/test-network-policy.py
+          python3 tools/test-instagram.py
       - name: Install SDK and build
         run: |
           sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
@@ -70,7 +71,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: Flux-2.0.0-unsigned
+          name: Flux-2.1.0-unsigned
           path: |
             android/app/build/outputs/apk/release/app-release-unsigned.apk
             android/app/build/outputs/apk/release/app-release-unsigned.apk.sha256

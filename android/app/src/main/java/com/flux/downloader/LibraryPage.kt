@@ -42,7 +42,7 @@ data class LibraryPreferences(val layout: LibraryLayout = LibraryLayout.List, va
 fun libraryJobs(jobs: List<Download>, query: String, kind: String, sort: LibrarySort, favouritesOnly: Boolean = false,
     status: LibraryStatus = LibraryStatus.All): List<Download> {
     val matching = jobs.filter { it.terminal && (status.state == null || it.state == status.state) && (!favouritesOnly || it.favourite) && it.title.contains(query.trim(), ignoreCase = true) &&
-        (kind == "All" || (kind == "Audio" && it.audioOnly) || (kind == "Video" && !it.audioOnly)) }
+        (kind == "All" || (kind == "Audio" && it.audioOnly) || (kind == "Video" && !it.audioOnly && !it.isPhoto) || (kind == "Photos" && it.isPhoto)) }
     return when (sort) {
         LibrarySort.Newest -> matching.sortedByDescending { it.created }
         LibrarySort.Oldest -> matching.sortedBy { it.created }
@@ -188,7 +188,7 @@ fun LibraryPage(jobs: List<Download>, onRetry: (Download) -> Unit, onDownloadAga
                     modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp))
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 10.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    listOf("All", "Video", "Audio").forEach { option ->
+                    listOf("All", "Video", "Audio", "Photos").forEach { option ->
                         FilterChip(selected = kind == option, onClick = { kind = option }, label = { Text(option) })
                     }
                     Box {
@@ -277,7 +277,7 @@ private fun LibraryCard(job: Download, prefs: LibraryPreferences, onRetry: (Down
     fun open() {
         runCatching { context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(job.uri), job.mime)
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }
-            .onFailure { Toast.makeText(context, "No compatible player, or the file was moved. Open your download folder.", Toast.LENGTH_LONG).show() }
+            .onFailure { Toast.makeText(context, "No compatible viewer, or the file was moved. Open your download folder.", Toast.LENGTH_LONG).show() }
     }
     Surface(shape = RoundedCornerShape(if (compact) 12.dp else 18.dp), color = colors.surface) {
         Column(Modifier.padding(if (compact || small) 10.dp else 14.dp)) {
@@ -290,14 +290,14 @@ private fun LibraryCard(job: Download, prefs: LibraryPreferences, onRetry: (Down
                 Column(Modifier.weight(1f).padding(start = if (grid) 0.dp else 12.dp)) {
                     Text(if (job.favourite) "★ ${job.title}" else job.title, maxLines = if (compact) 1 else if (large) 3 else 2, overflow = TextOverflow.Ellipsis,
                         fontSize = if (compact || small) 12.sp else if (large) 17.sp else 14.sp, fontWeight = FontWeight.SemiBold)
-                    Text("${if (job.audioOnly) "Audio" else "Video"} · ${job.label}${if (job.bytes > 0) " · ${sizeLabel(job.bytes)}" else ""}",
+                    Text("${if(job.isPhoto) "Photo" else if (job.audioOnly) "Audio" else "Video"} · ${job.label}${if (job.bytes > 0) " · ${sizeLabel(job.bytes)}" else ""}",
                         color = colors.onSurfaceVariant, fontSize = 10.sp, maxLines = 2,
                         modifier = Modifier.padding(top = 5.dp), overflow = TextOverflow.Ellipsis)
                     if (compact && job.state != "Complete") Text(job.state, color = colors.error, fontSize = 10.sp)
                 }
                 if (compact && !selecting) actionsMenu()
                 if (compact && !selecting) IconButton(onClick = { if (job.state == "Complete") open() else onRetry(job) }) {
-                    Icon(if (job.state == "Complete") Icons.Rounded.PlayArrow else Icons.Rounded.Refresh,
+                    Icon(if(job.state=="Complete" && job.isPhoto) Icons.Rounded.Image else if (job.state == "Complete") Icons.Rounded.PlayArrow else Icons.Rounded.Refresh,
                         if (job.state == "Complete") "Open ${job.title}" else "Retry ${job.title}", tint = colors.primary)
                 }
             }
@@ -311,7 +311,7 @@ private fun LibraryCard(job: Download, prefs: LibraryPreferences, onRetry: (Down
                         else job.state, color = colors.onSurfaceVariant, fontSize = 10.sp, modifier = Modifier.weight(1f))
                     if (!selecting) actionsMenu()
                     if (!selecting) TextButton(onClick = { if (job.state == "Complete") open() else onRetry(job) }, contentPadding = PaddingValues(horizontal = 6.dp)) {
-                        Icon(if (job.state == "Complete") Icons.Rounded.PlayArrow else Icons.Rounded.Refresh, null, Modifier.size(18.dp))
+                        Icon(if(job.state=="Complete" && job.isPhoto) Icons.Rounded.Image else if (job.state == "Complete") Icons.Rounded.PlayArrow else Icons.Rounded.Refresh, null, Modifier.size(18.dp))
                         Text(if (job.state == "Complete") "Open" else "Retry", fontSize = 12.sp)
                     }
                 }
@@ -323,8 +323,8 @@ private fun LibraryCard(job: Download, prefs: LibraryPreferences, onRetry: (Down
 @Composable
 private fun LibraryThumbnail(job: Download, modifier: Modifier) {
     Box(modifier.clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.primary.copy(alpha = .12f)), contentAlignment = Alignment.Center) {
-        Icon(if (job.audioOnly) Icons.Rounded.Headphones else Icons.Rounded.PlayCircle, null,
+        Icon(if(job.isPhoto) Icons.Rounded.Image else if (job.audioOnly) Icons.Rounded.Headphones else Icons.Rounded.PlayCircle, null,
             tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
-        if (job.thumbnail.isNotBlank()) AsyncImage(job.thumbnail, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        if (job.thumbnail.isNotBlank() || (job.isPhoto && job.uri.isNotBlank())) AsyncImage(if(job.isPhoto && job.state=="Complete") job.uri else job.thumbnail, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
     }
 }
