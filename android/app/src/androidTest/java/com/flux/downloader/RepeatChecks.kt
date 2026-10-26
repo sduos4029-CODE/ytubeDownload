@@ -59,6 +59,7 @@ class RepeatChecks(private val instrumentation: Instrumentation, private val rep
             check(Store.downloads.value.first { it.id==source.id }==source)
             app.getSharedPreferences("repeat-check",0).edit().putString("copy",copy.id).commit()
             Store.setQueuePaused(true)
+            withTimeout(60000) { Downloads.execution.lock();Downloads.execution.unlock() }
             report("PASS: new queue item downloads generated media to a distinct URI with source audio intact while original file bytes/history/favourite stay unchanged")
         }
     }

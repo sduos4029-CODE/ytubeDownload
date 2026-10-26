@@ -129,6 +129,11 @@ class RuntimeChecks : Instrumentation() {
             check(!activity.isFinishing) { "Activity did not launch" }
             report("PASS: APK installs and MainActivity launches")
             if (uiOnly || queueUiOnly || transferUiOnly || libraryUiOnly || progressUiOnly || favouritesUiOnly || repeatUiOnly) {
+                // UI scenarios own synthetic job states. Drain WorkManager,
+                // including requests restored after a force-stop, first.
+                Store.setQueuePaused(true)
+                WorkManager.getInstance(targetContext).cancelAllWork().result.get()
+                runBlocking { withTimeout(60000) { Downloads.execution.lock(); Downloads.execution.unlock() } }
                 fun click(label: String) {
                     var forward = true
                     val deadline = System.currentTimeMillis() + 30000
@@ -230,7 +235,8 @@ class RuntimeChecks : Instrumentation() {
                             if(area?.performAction(action)!=true)forward=!forward
                             Thread.sleep(300)
                         }
-                        error("Progress UI label not visible after scrolling: $label")
+                        val snapshot=Store.downloads.value.find { it.id==fixture.id }
+                        error("Progress UI label not visible after scrolling: $label; state=${snapshot?.state}; progress=${snapshot?.progress}")
                     }
                     listOf("Video stream","1 · Download","2 · Merge","3 · Save","Speed unavailable","Time unavailable").forEach(::requireVisible)
                     Store.change(fixture.id,true) { it.copy(state="Merging",detail="Combining video + selected audio · no quality loss") }
