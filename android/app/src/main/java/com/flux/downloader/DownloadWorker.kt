@@ -247,7 +247,8 @@ private class DownloadTask(
                     val merging = line.startsWith("[Merger]", true) || line.startsWith("Merging formats", true)
                     val firstMerge = merging && state != "Merging"
                     val sample = TransferProgress.parse(line)
-                    val changedStream = sample != null && sample.format != TransferProgress.live.value[jobId]?.format
+                    val previous = TransferProgress.live.value[jobId]
+                    val changedStream = sample != null && (sample.format != previous?.format || sample.stream != previous.stream)
                     if (firstMerge || (sample != null && state != "Merging" && (changedStream || now - lastUpdate > 650 || sample.percent == 100f))) {
                         lastUpdate = now
                         if (firstMerge) {

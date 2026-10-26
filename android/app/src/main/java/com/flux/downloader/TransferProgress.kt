@@ -24,8 +24,8 @@ fun remainingTime(seconds: Long): String = when {
 
 object TransferProgress {
     const val PREFIX = "FLUX_PROGRESS "
-    // JSON conversion keeps unavailable values quoted, instead of inventing zeros.
-    const val TEMPLATE = "download:FLUX_PROGRESS {\"downloaded\":%(progress.downloaded_bytes)j,\"total\":%(progress.total_bytes)j,\"estimate\":%(progress.total_bytes_estimate)j,\"speed\":%(progress.speed)j,\"eta\":%(progress.eta)j,\"format\":%(info.format_id)j,\"video\":%(info.vcodec)j,\"audio\":%(info.acodec)j}"
+    // Explicit null defaults keep unavailable fields valid JSON, instead of bare NA or invented zeros.
+    const val TEMPLATE = "download:FLUX_PROGRESS {\"downloaded\":%(progress.downloaded_bytes|null)j,\"total\":%(progress.total_bytes|null)j,\"estimate\":%(progress.total_bytes_estimate|null)j,\"speed\":%(progress.speed|null)j,\"eta\":%(progress.eta|null)j,\"format\":%(info.format_id|null)j,\"video\":%(info.vcodec|null)j,\"audio\":%(info.acodec|null)j}"
     private val mutable = MutableStateFlow<Map<String, TransferSnapshot>>(emptyMap())
     val live = mutable.asStateFlow()
     @Synchronized fun record(id: String, value: TransferSnapshot) { mutable.value = mutable.value + (id to value) }
