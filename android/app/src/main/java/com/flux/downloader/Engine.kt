@@ -225,6 +225,16 @@ object Store {
         mutable.value = mutable.value.map { if (it.id == id && it.state == "Complete" && it.uri.isNotBlank()) it.copy(favourite = !it.favourite) else it }
         save(true)
     }
+    @Synchronized fun repeatCompleted(id: String): RepeatOutcome {
+        val original = mutable.value.find { it.id == id } ?: error("This history entry is no longer available.")
+        val fresh = RepeatDownloads.prepare(original, folder.value)
+        RepeatDownloads.matching(mutable.value, original)?.let { return RepeatOutcome(it, false) }
+        val next = fresh.copy(state = if (queuePaused.value) "Paused" else "Queued", queueOrder = nextQueueOrder(),
+            detail = if (queuePaused.value) "Queue paused · ready when you resume" else "Waiting to download again")
+        mutable.value = listOf(next) + mutable.value
+        save(true)
+        return RepeatOutcome(next, true)
+    }
     @Synchronized fun removeHistory(ids: Set<String>): List<Download> {
         val removed = mutable.value.filter { it.id in ids && it.terminal && it.pendingUri.isBlank() && !isWorking(it.id) }
         val removedIds = removed.map { it.id }.toSet()

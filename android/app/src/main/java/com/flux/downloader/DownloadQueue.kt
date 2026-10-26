@@ -43,6 +43,12 @@ object Downloads {
             detail = if (paused) "Queue paused · ready when you resume" else "Waiting in download queue"))
         if (!paused) kick(context)
     }
+    fun downloadAgain(context: Context, sourceId: String): RepeatOutcome {
+        Store.init(context)
+        val result = Store.repeatCompleted(sourceId)
+        if (result.created && !Store.queuePaused.value) kick(context)
+        return result
+    }
 
     fun kick(context: Context) {
         val request = OneTimeWorkRequestBuilder<DownloadWorker>()
