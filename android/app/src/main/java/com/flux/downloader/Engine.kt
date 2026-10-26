@@ -166,7 +166,7 @@ data class Download(
     val created: Long = System.currentTimeMillis(), val replaceEmbeddedAudio: Boolean = false,
     val audioDescription: String = "", val bytes: Long = 0,
     val queueOrder: Long = created, val retryCount: Int = 0, val nextAttemptAt: Long = 0,
-    val pendingUri: String = ""
+    val pendingUri: String = "", val favourite: Boolean = false
 ) {
     val terminal get() = state in listOf("Complete", "Failed", "Cancelled")
     fun json() = JSONObject().apply {
@@ -177,6 +177,7 @@ data class Download(
         put("mime", mime); put("created", created)
         put("replaceEmbeddedAudio", replaceEmbeddedAudio); put("audioDescription", audioDescription); put("bytes", bytes)
         put("queueOrder", queueOrder); put("retryCount", retryCount); put("nextAttemptAt", nextAttemptAt); put("pendingUri", pendingUri)
+        put("favourite", favourite)
     }
     companion object {
         fun from(o: JSONObject) = Download(o.getString("id"), o.getString("url"), o.getString("title"),
@@ -184,7 +185,7 @@ data class Download(
             o.optLong("duration"), o.optString("folder"), o.getString("state"), o.optDouble("progress").toFloat(),
             o.optString("detail"), o.optString("uri"), o.optString("mime"), o.optLong("created"),
             o.optBoolean("replaceEmbeddedAudio", false), o.optString("audioDescription", ""), o.optLong("bytes", 0),
-            o.optLong("queueOrder", o.optLong("created")), o.optInt("retryCount", 0), o.optLong("nextAttemptAt", 0), o.optString("pendingUri", ""))
+            o.optLong("queueOrder", o.optLong("created")), o.optInt("retryCount", 0), o.optLong("nextAttemptAt", 0), o.optString("pendingUri", ""), o.optBoolean("favourite", false))
     }
 }
 
@@ -220,6 +221,10 @@ object Store {
         mutable.value = mutable.value.map { if (it.id == id) transform(it) else it }; save(durable); releaseUnusedFolders()
     }
     @Synchronized fun clearHistory() { mutable.value = mutable.value.filter { !it.terminal || it.pendingUri.isNotBlank() }; save(true); releaseUnusedFolders() }
+    @Synchronized fun toggleFavourite(id: String) {
+        mutable.value = mutable.value.map { if (it.id == id && it.state == "Complete" && it.uri.isNotBlank()) it.copy(favourite = !it.favourite) else it }
+        save(true)
+    }
     @Synchronized fun removeHistory(ids: Set<String>): List<Download> {
         val removed = mutable.value.filter { it.id in ids && it.terminal && it.pendingUri.isBlank() && !isWorking(it.id) }
         val removedIds = removed.map { it.id }.toSet()
