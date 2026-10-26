@@ -20,6 +20,11 @@ check() {
   adb shell am instrument -w -r "${args[@]}" com.flux.downloader.test/com.flux.downloader.RuntimeChecks | tee "test-results/$mode.log"
   python3 tools/assert-marker.py "test-results/$mode.log" "$marker"
 }
+check serverOnly 'SERVER RESOLVER CHECKS PASSED'
+"$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks "$ANDROID_USER_HOME/debug.keystore" --ks-key-alias androiddebugkey --ks-pass pass:android --key-pass pass:android --out "$RUNNER_TEMP/flux-release-ui.apk" app/build/outputs/apk/release/app-release-unsigned.apk
+adb install -r "$RUNNER_TEMP/flux-release-ui.apk"
+check serverUiOnly 'SERVER UI CHECKS PASSED'
+adb install -r app/build/outputs/apk/debug/app-debug.apk
 check sessionOnly 'SESSION CHECKS PASSED'
 adb shell am force-stop com.flux.downloader
 check sessionRestartOnly 'SESSION RESTART CHECKS PASSED'
@@ -51,7 +56,6 @@ adb shell am force-stop com.flux.downloader
 check galleryRestartOnly 'GALLERY RESTART CHECKS PASSED'
 # Use only the runner's temporary debug identity for release UI testing. The
 # unsigned artifact is unchanged; the owner's update key never enters CI.
-"$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks "$ANDROID_USER_HOME/debug.keystore" --ks-key-alias androiddebugkey --ks-pass pass:android --key-pass pass:android --out "$RUNNER_TEMP/flux-release-ui.apk" app/build/outputs/apk/release/app-release-unsigned.apk
 adb install -r "$RUNNER_TEMP/flux-release-ui.apk"
 check transferUiOnly 'TRANSFER UI CHECKS PASSED'
 check libraryUiOnly 'LIBRARY UI CHECKS PASSED'

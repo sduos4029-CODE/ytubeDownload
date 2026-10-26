@@ -263,7 +263,7 @@ private fun Discover(model: FluxModel, onBatchQueued: ()->Unit) {
         model.error?.let { message -> item {
             ErrorCard(message)
             if(MediaLinks.isInstagram(runCatching {Engine.target(model.query)}.getOrDefault(""))) {
-                Spacer(Modifier.height(12.dp));InstagramConnectionCard()
+                Spacer(Modifier.height(12.dp));ServerConnectionCard()
             }
         } }
         if (model.inspecting) item { LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Lilac) }
@@ -412,6 +412,7 @@ private fun SettingsPage(folder: String, active: Boolean, model: FluxModel, onFo
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
         Text("Just your way.", fontSize = 29.sp, fontWeight = FontWeight.Bold)
         Text("A few preferences for your offline space.", color = Muted, fontSize = 13.sp)
+        ServerConnectionCard()
         InstagramConnectionCard()
         TransferSettingsCard()
         Surface(color = Panel, shape = RoundedCornerShape(20.dp)) {

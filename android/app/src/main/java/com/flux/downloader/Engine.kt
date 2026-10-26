@@ -19,6 +19,7 @@ import java.util.UUID
 class FluxApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        ServerResolver.recover(this)
         InstagramSession.init(this)
         InstagramBrowser.recover(this)
         Store.init(this)
@@ -74,6 +75,7 @@ object Engine {
 
     suspend fun search(context: Context, input: String): List<Video> = withContext(Dispatchers.IO) {
         val target = target(input)
+        ServerResolver.resolve(context,target)?.let { return@withContext InstagramPost.parse(it,target) }
         initialize(context)
         val request = secureOptions(YoutubeDLRequest(target)).apply {
             addOption("--dump-single-json")
@@ -96,6 +98,10 @@ object Engine {
     }
 
     suspend fun inspect(context: Context, video: Video): Video = withContext(Dispatchers.IO) {
+        ServerResolver.resolve(context,video.url)?.let { info ->
+            return@withContext InstagramPost.parse(info,video.url).firstOrNull {it.id==video.id}
+                ?: error("This Instagram item changed. Load the post again.")
+        }
         initialize(context)
         val request = secureOptions(YoutubeDLRequest(video.url)).apply {
             addOption("--dump-single-json"); addOption("--skip-download")

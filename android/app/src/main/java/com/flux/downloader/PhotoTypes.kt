@@ -11,11 +11,12 @@ object SourceFailures {
     fun message(url: String, error: String): String? {
         if(!MediaLinks.isInstagram(url))return null
         return when {
+            error.contains("Flux server",true) -> error.take(350)
             error.contains("429") || error.contains("rate-limit",true) || error.contains("too many requests",true) -> "Instagram is limiting requests. Wait before trying this public post again."
             error.contains("cookies are no longer valid",true) || error.contains("connection expired",true) -> "Your Instagram connection expired. Reconnect Instagram in Settings, then retry."
             // This extractor error includes generic login/cookie advice. It
             // does not establish that the post is private or unavailable.
-            error.contains("empty media response",true) -> "Flux could not retrieve this Instagram post's details. Public posts can also fail with the current extractor. No thumbnail or download formats were returned. Try Connect Instagram in Settings, then search again."
+            error.contains("empty media response",true) -> "Flux could not retrieve this Instagram post's details. Public posts can also fail with the current extractor. No thumbnail or download formats were returned. A verified public Instagram server can provide another retrieval route in Settings."
             error.contains("login",true) || error.contains("sign in",true) || error.contains("private",true) -> "Instagram requires sign-in for this request. Connect or reconnect Instagram in Settings."
             error.contains("401") -> "Instagram rejected this request. Connect or reconnect Instagram in Settings, then retry."
             error.contains("403") -> "Instagram denied access to this post. Try another public post or retry later."

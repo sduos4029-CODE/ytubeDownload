@@ -1,0 +1,6 @@
+**
+!server/
+!server/*.py
+!android/
+!android/tools/
+!android/tools/*.py
