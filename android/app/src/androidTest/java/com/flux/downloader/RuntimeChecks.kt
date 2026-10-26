@@ -19,6 +19,8 @@ import java.util.concurrent.Executors
 
 /** Real-device integration checks. Media is generated locally; no third-party video is downloaded. */
 class RuntimeChecks : Instrumentation() {
+    private var serverUiOnly = false
+    private var serverOnly = false
     private var sessionOnly = false
     private var sessionRestartOnly = false
     private var sessionUiOnly = false
@@ -56,6 +58,8 @@ class RuntimeChecks : Instrumentation() {
     private var restartOnly = false
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
+        serverUiOnly = arguments?.getString("serverUiOnly") == "true"
+        serverOnly = arguments?.getString("serverOnly") == "true"
         sessionOnly = arguments?.getString("sessionOnly") == "true"
         sessionRestartOnly = arguments?.getString("sessionRestartOnly") == "true"
         sessionUiOnly = arguments?.getString("sessionUiOnly") == "true"
@@ -97,6 +101,11 @@ class RuntimeChecks : Instrumentation() {
     override fun onStart() {
         val result = Bundle()
         try {
+            if(serverOnly) {
+                runBlocking {ServerResolverChecks(this@RuntimeChecks,::report).run()}
+                result.putString("stream","SERVER RESOLVER CHECKS PASSED\n")
+                finish(Activity.RESULT_OK,result);return
+            }
             if(sessionOnly || sessionRestartOnly) {
                 InstagramSessionChecks(this@RuntimeChecks,::report).run(sessionRestartOnly)
                 result.putString("stream",if(sessionRestartOnly) "SESSION RESTART CHECKS PASSED\n" else "SESSION CHECKS PASSED\n")
@@ -194,7 +203,7 @@ class RuntimeChecks : Instrumentation() {
             val activity = startActivitySync(Intent(targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
             check(!activity.isFinishing) { "Activity did not launch" }
             report("PASS: APK installs and MainActivity launches")
-            if (uiOnly || queueUiOnly || transferUiOnly || libraryUiOnly || progressUiOnly || favouritesUiOnly || repeatUiOnly || libraryToolsUiOnly || platformUiOnly || galleryUiOnly || sessionUiOnly) {
+            if (serverUiOnly || uiOnly || queueUiOnly || transferUiOnly || libraryUiOnly || progressUiOnly || favouritesUiOnly || repeatUiOnly || libraryToolsUiOnly || platformUiOnly || galleryUiOnly || sessionUiOnly) {
                 // UI scenarios own synthetic job states. Drain WorkManager,
                 // including requests restored after a force-stop, first.
                 Store.setQueuePaused(true)
@@ -226,6 +235,23 @@ class RuntimeChecks : Instrumentation() {
                         Thread.sleep(300)
                     }
                     error("UI control not found: $label")
+                }
+                if(serverUiOnly) {
+                    check(!ServerResolver.enabled(targetContext))
+                    check(runCatching {ServerResolver.validateOrigin("http://127.0.0.1:8080")}.isFailure)
+                    click("Settings");click("Set up server")
+                    fun find(node:android.view.accessibility.AccessibilityNodeInfo?,label:String):android.view.accessibility.AccessibilityNodeInfo? {
+                        if(node==null)return null
+                        if(node.isVisibleToUser && node.text?.toString()==label)return node
+                        for(i in 0 until node.childCount) {find(node.getChild(i),label)?.let {return it}}
+                        return null
+                    }
+                    val button=find(uiAutomation.rootInActiveWindow,"Verify and connect") ?: error("Server setup control missing")
+                    var parent:android.view.accessibility.AccessibilityNodeInfo?=button
+                    while(parent!=null && !parent.isClickable)parent=parent.parent
+                    check(parent!=null && !parent.isEnabled)
+                    report("PASS: release server setup is reachable, empty credentials cannot connect and HTTP loopback is rejected")
+                    result.putString("stream","SERVER UI CHECKS PASSED\n");finish(Activity.RESULT_OK,result);return
                 }
                 if(sessionUiOnly) {
                     InstagramSession.clear(targetContext)

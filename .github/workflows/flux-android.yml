@@ -2,9 +2,9 @@ name: Flux Android build and device checks
 on:
   push:
     branches: [main, 'flux/**']
-    paths: ['android/**', '.github/workflows/flux-android.yml']
+    paths: ['android/**', 'server/**', '.github/workflows/flux-android.yml']
   pull_request:
-    paths: ['android/**', '.github/workflows/flux-android.yml']
+    paths: ['android/**', 'server/**', '.github/workflows/flux-android.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -45,6 +45,13 @@ jobs:
           python3 tools/package-extractor.py "$RUNNER_TEMP/flux-upstream-ytdlp"
           python3 tools/test-network-policy.py
           python3 tools/test-instagram.py
+          python3 -m unittest discover -s ../server -p 'test_*.py'
+      - name: Build server image and record anonymous live availability
+        run: |
+          docker build -f ../server/Dockerfile -t flux-resolver:ci ..
+          mkdir -p test-results
+          docker run --rm --read-only --tmpfs /tmp:rw,noexec,nosuid,size=32m --memory=512m --pids-limit=64 flux-resolver:ci python server/live_check.py > test-results/server-live.json
+          cat test-results/server-live.json
       - name: Install SDK and build
         run: |
           sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
@@ -71,7 +78,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: Flux-2.1.1-unsigned
+          name: Flux-2.2.0-preview-unsigned
           path: |
             android/app/build/outputs/apk/release/app-release-unsigned.apk
             android/app/build/outputs/apk/release/app-release-unsigned.apk.sha256

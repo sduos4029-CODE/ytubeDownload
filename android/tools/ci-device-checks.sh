@@ -20,6 +20,7 @@ check() {
   adb shell am instrument -w -r "${args[@]}" com.flux.downloader.test/com.flux.downloader.RuntimeChecks | tee "test-results/$mode.log"
   python3 tools/assert-marker.py "test-results/$mode.log" "$marker"
 }
+check serverOnly 'SERVER RESOLVER CHECKS PASSED'
 check sessionOnly 'SESSION CHECKS PASSED'
 adb shell am force-stop com.flux.downloader
 check sessionRestartOnly 'SESSION RESTART CHECKS PASSED'
@@ -53,6 +54,7 @@ check galleryRestartOnly 'GALLERY RESTART CHECKS PASSED'
 # unsigned artifact is unchanged; the owner's update key never enters CI.
 "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks "$ANDROID_USER_HOME/debug.keystore" --ks-key-alias androiddebugkey --ks-pass pass:android --key-pass pass:android --out "$RUNNER_TEMP/flux-release-ui.apk" app/build/outputs/apk/release/app-release-unsigned.apk
 adb install -r "$RUNNER_TEMP/flux-release-ui.apk"
+check serverUiOnly 'SERVER UI CHECKS PASSED'
 check transferUiOnly 'TRANSFER UI CHECKS PASSED'
 check libraryUiOnly 'LIBRARY UI CHECKS PASSED'
 check progressUiOnly 'PROGRESS UI CHECKS PASSED'
