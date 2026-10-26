@@ -6,6 +6,7 @@ import android.provider.OpenableColumns
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -25,8 +26,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import coil.compose.AsyncImage
 import java.util.Locale
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 
 enum class LibraryLayout { List, Grid, Compact }
 enum class LibrarySize { Small, Medium, Large }
@@ -51,8 +56,54 @@ fun LibraryPage(jobs: List<Download>, onRetry: (Download) -> Unit) {
     var query by remember { mutableStateOf("") }
     var kind by remember { mutableStateOf("All") }
     var sortMenu by remember { mutableStateOf(false) }
+    var selecting by remember { mutableStateOf(false) }
+    var selected by remember { mutableStateOf(emptySet<String>()) }
+    var removal by remember { mutableStateOf(emptySet<String>()) }
+    var busy by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     val shown = remember(jobs, query, kind, prefs.sort) { libraryJobs(jobs, query, kind, prefs.sort) }
     val context = LocalContext.current
+    val chosen = jobs.filter { it.id in selected && it.terminal }
+    LaunchedEffect(jobs.map { it.id to it.state }) {
+        selected = selected.intersect(jobs.filter { it.terminal }.map { it.id }.toSet())
+    }
+    BackHandler(selecting && !busy) { selecting = false; selected = emptySet() }
+    fun toggle(job: Download) {
+        if (job.id in selected) selected = selected - job.id
+        else if (selected.size < LibraryActions.MAX_SELECTION) selected = selected + job.id
+        else Toast.makeText(context, "Select up to 100 items at a time.", Toast.LENGTH_SHORT).show()
+    }
+    fun share(items: List<Download>) {
+        if (busy) return
+        busy = true
+        scope.launch {
+            try {
+                val intent = LibraryActions.shareIntent(context, items)
+                context.startActivity(Intent.createChooser(intent, "Share downloads"))
+            } catch (e: CancellationException) { throw e
+            } catch (e: Exception) {
+                Toast.makeText(context, e.message ?: "No app is available to share these files.", Toast.LENGTH_LONG).show()
+            } finally { busy = false }
+        }
+    }
+    if (removal.isNotEmpty()) AlertDialog(onDismissRequest = { if (!busy) removal = emptySet() },
+        title = { Text("Remove ${removal.size} history entries?") },
+        text = { Text("Saved files stay in your download folder. Failed download partials are cleared. Active items and unfinished saves are kept.") },
+        confirmButton = { TextButton(enabled = !busy, onClick = {
+            busy = true
+            val ids = removal
+            scope.launch {
+                try {
+                    val count = LibraryActions.removeHistory(context, ids)
+                    selected = emptySet(); selecting = false; removal = emptySet()
+                    Toast.makeText(context, "$count history entries removed. Saved files kept.", Toast.LENGTH_LONG).show()
+                } catch (e: CancellationException) { throw e
+                } catch (_: Exception) {
+                    Toast.makeText(context, "Could not update history. Try again.", Toast.LENGTH_LONG).show()
+                } finally { busy = false }
+            }
+        }) { Text("Remove history") } },
+        dismissButton = { TextButton(enabled = !busy, onClick = { removal = emptySet() }) { Text("Keep entries") } })
     LaunchedEffect(jobs.map { it.id to it.bytes }) {
         withContext(Dispatchers.IO) {
             jobs.filter { it.state == "Complete" && it.bytes == 0L && it.uri.isNotBlank() }.forEach { old ->
@@ -69,12 +120,29 @@ fun LibraryPage(jobs: List<Download>, onRetry: (Download) -> Unit) {
     val columns = if (prefs.layout == LibraryLayout.Grid) GridCells.Adaptive(when (prefs.size) {
         LibrarySize.Small -> 128.dp; LibrarySize.Medium -> 176.dp; LibrarySize.Large -> 256.dp
     }) else GridCells.Fixed(1)
+    Column(Modifier.fillMaxSize()) {
+    if (selecting) Surface(tonalElevation = 3.dp) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("${chosen.size} selected", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                TextButton(enabled = !busy, onClick = { selected = shown.take(LibraryActions.MAX_SELECTION).map { it.id }.toSet() }) { Text("Select results") }
+                TextButton(enabled = !busy, onClick = { selected = emptySet(); selecting = false }) { Text("Done") }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                FilledTonalButton(enabled = !busy && chosen.isNotEmpty() && chosen.all { it.state == "Complete" && it.uri.isNotBlank() },
+                    onClick = { share(chosen) }) { Icon(Icons.Rounded.Share, null, Modifier.size(18.dp)); Text(" Share files") }
+                OutlinedButton(enabled = !busy && chosen.isNotEmpty(), onClick = { removal = selected }) { Text("Remove history") }
+            }
+            if (busy) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 6.dp))
+        }
+    }
     LazyVerticalGrid(columns = columns, contentPadding = PaddingValues(20.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.fillMaxSize()) {
+        modifier = Modifier.weight(1f)) {
         item(span = { GridItemSpan(maxLineSpan) }) {
             Column {
                 Text("Your offline collection", fontSize = 27.sp, fontWeight = FontWeight.Bold)
+                if (!selecting && shown.isNotEmpty()) TextButton(onClick = { selecting = true }) { Text("Select downloads") }
                 Text("${jobs.count { it.state == "Complete" }} saved · arrange it your way", color = colors.onSurfaceVariant,
                     fontSize = 12.sp, modifier = Modifier.padding(top = 7.dp, bottom = 16.dp))
                 OutlinedTextField(value = query, onValueChange = { query = it }, singleLine = true,
@@ -123,13 +191,16 @@ fun LibraryPage(jobs: List<Download>, onRetry: (Download) -> Unit) {
                     color = colors.onSurfaceVariant, fontSize = 12.sp, modifier = Modifier.padding(top = 7.dp))
             }
         }
-        items(shown, key = { it.id }) { job -> LibraryCard(job, prefs, onRetry) }
+        items(shown, key = { it.id }) { job -> LibraryCard(job, prefs, onRetry, selecting, job.id in selected,
+            busy, { toggle(job) }, { share(listOf(job)) }) }
         item(span = { GridItemSpan(maxLineSpan) }) { Spacer(Modifier.height(8.dp)) }
+    }
     }
 }
 
 @Composable
-private fun LibraryCard(job: Download, prefs: LibraryPreferences, onRetry: (Download) -> Unit) {
+private fun LibraryCard(job: Download, prefs: LibraryPreferences, onRetry: (Download) -> Unit,
+    selecting: Boolean, selected: Boolean, busy: Boolean, onSelect: () -> Unit, onShare: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val context = LocalContext.current
     val compact = prefs.layout == LibraryLayout.Compact
@@ -145,6 +216,8 @@ private fun LibraryCard(job: Download, prefs: LibraryPreferences, onRetry: (Down
         Column(Modifier.padding(if (compact || small) 10.dp else 14.dp)) {
             if (grid) LibraryThumbnail(job, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = if (grid) 11.dp else 0.dp)) {
+                if (selecting) Checkbox(checked = selected, onCheckedChange = { onSelect() }, enabled = !busy,
+                    modifier = Modifier.semantics { contentDescription = "Select ${job.title}" })
                 if (!grid) LibraryThumbnail(job, Modifier.size(when { compact -> 44.dp; small -> 60.dp; large -> 112.dp; else -> 80.dp },
                     when { compact -> 38.dp; small -> 48.dp; large -> 84.dp; else -> 60.dp }))
                 Column(Modifier.weight(1f).padding(start = if (grid) 0.dp else 12.dp)) {
@@ -155,7 +228,10 @@ private fun LibraryCard(job: Download, prefs: LibraryPreferences, onRetry: (Down
                         modifier = Modifier.padding(top = 5.dp), overflow = TextOverflow.Ellipsis)
                     if (compact && job.state != "Complete") Text(job.state, color = colors.error, fontSize = 10.sp)
                 }
-                if (compact) IconButton(onClick = { if (job.state == "Complete") open() else onRetry(job) }) {
+                if (compact && !selecting && job.state == "Complete") IconButton(enabled = !busy, onClick = onShare) {
+                    Icon(Icons.Rounded.Share, "Share ${job.title}", tint = colors.primary)
+                }
+                if (compact && !selecting) IconButton(onClick = { if (job.state == "Complete") open() else onRetry(job) }) {
                     Icon(if (job.state == "Complete") Icons.Rounded.PlayArrow else Icons.Rounded.Refresh,
                         if (job.state == "Complete") "Open ${job.title}" else "Retry ${job.title}", tint = colors.primary)
                 }
@@ -168,7 +244,10 @@ private fun LibraryCard(job: Download, prefs: LibraryPreferences, onRetry: (Down
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(if (job.state == "Complete") java.text.DateFormat.getDateInstance(java.text.DateFormat.SHORT).format(java.util.Date(job.created))
                         else job.state, color = colors.onSurfaceVariant, fontSize = 10.sp, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { if (job.state == "Complete") open() else onRetry(job) }, contentPadding = PaddingValues(horizontal = 6.dp)) {
+                    if (!selecting && job.state == "Complete") IconButton(enabled = !busy, onClick = onShare) {
+                        Icon(Icons.Rounded.Share, "Share ${job.title}", tint = colors.primary, modifier = Modifier.size(19.dp))
+                    }
+                    if (!selecting) TextButton(onClick = { if (job.state == "Complete") open() else onRetry(job) }, contentPadding = PaddingValues(horizontal = 6.dp)) {
                         Icon(if (job.state == "Complete") Icons.Rounded.PlayArrow else Icons.Rounded.Refresh, null, Modifier.size(18.dp))
                         Text(if (job.state == "Complete") "Open" else "Retry", fontSize = 12.sp)
                     }

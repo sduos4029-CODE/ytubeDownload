@@ -2,16 +2,19 @@
 
 Native Kotlin / Jetpack Compose YouTube downloader for Android 8.0+.
 
-**Delivery status: version 1.4.0 compiled and tested with generated media on an Android 11 emulator.** Download, separate-stream merging, audio-only saving, progress states, cancellation, persistent history, and chosen-folder permissions passed the documented checks. Live YouTube search, thumbnails and downloads remain unverified because the environment proxy denied YouTube requests. See `TEST_REPORT.md` for exact coverage and limits. The installable signed APK is delivered separately as `Flux-v1.4.0.apk`.
+**Delivery status: version 1.5.0 implementation prepared; exact-commit build and runtime verification run in GitHub Actions.** Download, separate-stream merging, audio-only saving, progress states, cancellation, persistent history, and chosen-folder permissions passed the documented checks. Live YouTube search, thumbnails and downloads remain unverified because the environment proxy denied YouTube requests. See `TEST_REPORT.md` for exact coverage and limits. The installable signed APK is delivered separately as `Flux-v1.5.0.apk`.
 
 ## Get an APK with GitHub Actions
 
-1. Create a GitHub repository and upload **the contents of this folder**, including `.github` (the Gradle settings must be at the repository root).
-2. Open **Actions → Build Android APK → Run workflow**. The workflow also runs on pushes to `main` or `master`.
-3. When the job succeeds, download the **Flux-release-apk** artifact and unzip it.
-4. Transfer `app-release.apk` to your Android phone and open it. Allow installation from that file source if Android asks.
+This repository keeps the app in android/. The root workflow .github/workflows/flux-android.yml builds it on pushes to main or flux/** and through workflow_dispatch.
 
-The APK is signed with the runner's debug key. Each fresh runner can generate a different key; replacing an earlier debug build may require uninstalling it, which removes app history and app-specific files. Use a persistent signing key for release builds. No upload to an app store is configured. The supplied private download page hosts the separately built and verified APK.
+1. Open Actions → Flux Android build and device checks.
+2. Select a successful run for your source commit.
+3. Download and unzip Flux-1.5.0-unsigned.
+4. Verify app-release-unsigned.apk against its SHA-256 sidecar.
+5. Sign it outside GitHub with your persistent app key using Android Build Tools apksigner. Keep the owner key outside the repository and runner.
+
+The unsigned artifact cannot be installed directly. The private Flux download page hosts the separately signed APK, using the existing certificate so installed Flux copies can update without losing history. CI signs a separate copy with an ephemeral key for release UI tests only.
 
 ## Build locally
 
@@ -25,9 +28,17 @@ On Linux or macOS, with `curl`, `unzip`, and `sha256sum` installed:
 
 `gradlew` is a small shell bootstrap that downloads Gradle 8.10.2 and checks its official SHA-256 checksum over HTTPS. It is not the standard binary Gradle wrapper. On Windows, install Gradle 8.10.2 and run `gradle assembleRelease lintRelease`, or run the shell bootstrap through WSL. The GitHub workflow installs Gradle directly.
 
-Output: `app/build/outputs/apk/release/app-release.apk`.
+Output: `app/build/outputs/apk/release/app-release-unsigned.apk` unless FLUX_SIGNING_STORE and its signing variables are supplied.
 
-## New in 1.4.0
+## New in 1.5.0
+
+- Share one saved download or select up to 100 files for the Android share sheet. Only selected content URIs receive temporary read access; Flux grants no write access.
+- Library multi-select works with List, Grid and Compact views. Select results chooses up to 100 matching results across the current search/type filter; Done or Android Back leaves selection mode.
+- Remove selected history with confirmation. Saved files remain in their folder; failed partials are cleaned. Active work and unfinished save records are protected.
+- Missing or revoked files show an error before opening the share sheet; no partial subset is silently shared.
+- GitHub build instructions now describe the actual root workflow, unsigned artifacts and local signing process.
+
+## Included from 1.4.0
 
 - Settings supports 1–3 simultaneous downloads. Each task owns its process ID, progress and staging directory. Reducing the limit lets existing items finish; increasing it fills additional slots.
 - Wi-Fi-only preference prevents new transfers without active Wi-Fi and interrupts active network transfers when the connection changes. Partial data is retained and can resume when Wi-Fi returns. This is an application policy, not an OS firewall: bytes already in flight during a network handover cannot be guaranteed to be zero. VPNs that hide their underlying Wi-Fi transport may wait conservatively.
@@ -84,7 +95,8 @@ Public YouTube availability is not guaranteed. Bot checks, region/age restrictio
 - `Engine.kt`: extractor initialization, search, formats, durable local ledger.
 - `DownloadWorker.kt`: yt-dlp/FFmpeg execution, progress, cancellation, notifications, SAF/MediaStore saves.
 - `MainActivity.kt`: Compose Discover, Downloads, Library, Settings, quality sheet.
-- `.github/workflows/android.yml`: build, lint, downloadable debug APK artifact.
+- `../.github/workflows/flux-android.yml`: build, lint, emulator checks and unsigned release artifact.
+- `LibraryActions.kt`: safe file sharing and selective history removal.
 
 Uses AndroidX, Coil, yt-dlp via youtubedl-android, and the youtubedl-android FFmpeg package. Review upstream licenses, native dependency compatibility, platform terms, and distribution requirements before publishing.
 
