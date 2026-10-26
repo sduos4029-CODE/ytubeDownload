@@ -1,0 +1,19 @@
+# Personal preview only. The owner reviews and starts deployment in Render.
+services:
+  - type: web
+    name: flux-instagram-preview
+    runtime: docker
+    plan: free
+    repo: https://github.com/sduos4029-CODE/ytubeDownload
+    branch: flux/2.2-server-preview
+    dockerfilePath: ./server/Dockerfile
+    dockerContext: .
+    autoDeployTrigger: 'off'
+    healthCheckPath: /healthz
+    envVars:
+      - key: PORT
+        value: '10000'
+      - key: FLUX_API_TOKEN
+        # Manual: Render's generated base64 secret can contain characters that
+        # the existing Android preview intentionally does not accept.
+        sync: false
