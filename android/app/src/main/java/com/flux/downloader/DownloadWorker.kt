@@ -162,6 +162,7 @@ private class DownloadTask(
             require(result.extension.lowercase() in setOf("mkv", "mp4", "webm", "m4a", "mp3", "opus", "ogg", "flac", "wav", "aac", "mov")) {
                 "The source returned an unsupported file type. No file was saved."
             }
+            TransferProgress.clear(jobId)
             update("Saving", 0f, "Saving to your download folder")
             val (uri, mime) = save(result, job)
             checkControl()
@@ -301,6 +302,9 @@ private class DownloadTask(
         Store.change(jobId) {
             if (it.state in setOf("Pausing", "Paused", "Cancelled", "Complete")) it else it.copy(state = state, progress = progress, detail = detail)
         }
+        val current = Store.downloads.value.find { it.id == jobId }
+        if (current?.state == "Saving") post(notification(current.title, "Saving · ${current.detail}",
+            current.progress.toInt().coerceIn(0, 100), true))
     }
 
     private suspend fun save(file: File, job: Download): Pair<Uri, String> {
