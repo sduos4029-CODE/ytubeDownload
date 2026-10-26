@@ -48,7 +48,7 @@ class GalleryChecks(private val instrumentation: Instrumentation, private val re
         val unavailable=SourceFailures.message(POST,"Instagram sent an empty media response. Try login or cookies for authentication.")!!
         check(unavailable.startsWith("Flux could not retrieve") && !unavailable.contains("requires login"))
         check(SourceFailures.message(POST,"HTTP Error 429")!!.contains("limiting"))
-        check(SourceFailures.message(POST,"login required")!!.contains("private"))
+        check(SourceFailures.message(POST,"login required")!!.contains("sign-in"))
         Fixture().use { server ->
             // Only transport and selector use the generated loopback fixture;
             // source parsing and stable-item selection are checked separately.

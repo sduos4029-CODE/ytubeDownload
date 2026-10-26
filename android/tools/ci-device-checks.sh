@@ -20,6 +20,9 @@ check() {
   adb shell am instrument -w -r "${args[@]}" com.flux.downloader.test/com.flux.downloader.RuntimeChecks | tee "test-results/$mode.log"
   python3 tools/assert-marker.py "test-results/$mode.log" "$marker"
 }
+check sessionOnly 'SESSION CHECKS PASSED'
+adb shell am force-stop com.flux.downloader
+check sessionRestartOnly 'SESSION RESTART CHECKS PASSED'
 check baseline 'ALL RUNTIME CHECKS PASSED'
 check queueOnly 'QUEUE CHECKS PASSED'
 adb shell am force-stop com.flux.downloader
@@ -61,6 +64,10 @@ check platformUiOnly 'PLATFORM UI CHECKS PASSED'
 adb shell am force-stop com.flux.downloader
 check galleryUiOnly 'GALLERY UI CHECKS PASSED'
 adb shell am force-stop com.flux.downloader
+check sessionUiOnly 'SESSION UI CHECKS PASSED'
+adb shell am force-stop com.flux.downloader
 check instagramLiveOnly 'INSTAGRAM LIVE ATTEMPT FINISHED'
+adb shell am force-stop com.flux.downloader
+check reportedInstagramOnly 'REPORTED REEL ATTEMPT FINISHED'
 adb shell am start -n com.flux.downloader/.MainActivity
 adb logcat -d > test-results/logcat.txt

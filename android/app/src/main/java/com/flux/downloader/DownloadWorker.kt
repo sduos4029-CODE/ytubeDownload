@@ -130,6 +130,7 @@ private class DownloadTask(
         TransferProgress.clear(jobId)
         val work = Downloads.workDir(applicationContext, jobId)
         Store.workStarted(job)
+        var instagramLease:InstagramSession.Lease?=null
         try {
             checkControl()
             check(work.isDirectory || work.mkdirs()) { "Unable to prepare download storage. Check free space." }
@@ -142,7 +143,9 @@ private class DownloadTask(
                     detail = if (work.listFiles().orEmpty().isNotEmpty()) "Checking saved data · resuming where supported" else "Connecting to ${MediaLinks.parse(job.url)?.platform?.label ?: "source"}") else it
             }
             checkControl()
+            instagramLease=InstagramSession.lease(applicationContext,job.url)
             val request = Engine.secureOptions(YoutubeDLRequest(job.url)).apply {
+                instagramLease?.let {addOption("--cookies",it.file.absolutePath);it.userAgent?.let {agent -> addOption("--user-agent",agent)}}
                 addOption("--no-playlist"); addOption("--no-mtime"); addOption("--newline")
                 if(MediaLinks.isInstagram(job.url)) {
                     if(job.mediaId.isNotBlank()) {
@@ -217,6 +220,7 @@ private class DownloadTask(
             }
         } finally {
             withContext(NonCancellable) {
+                instagramLease?.close()
                 TransferProgress.clear(jobId)
                 val current = Store.downloads.value.find { it.id == jobId }
                 if (current != null && current.pendingUri.isNotBlank() && current.state != "Complete") {

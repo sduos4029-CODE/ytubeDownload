@@ -19,6 +19,8 @@ import java.util.UUID
 class FluxApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        InstagramSession.init(this)
+        InstagramBrowser.recover(this)
         Store.init(this)
     }
 }
@@ -80,13 +82,17 @@ object Engine {
             addOption("--socket-timeout", "25"); addOption("--retries", "1"); addOption("--extractor-retries", "1")
             if (target.startsWith("ytsearch")) addOption("--flat-playlist")
         }
-        val result = YoutubeDL.getInstance().execute(request)
-        val json = JSONObject(result.out)
-        if (MediaLinks.isInstagram(target)) return@withContext InstagramPost.parse(json,target)
-        val entries = json.optJSONArray("entries")
-        if (entries == null) listOf(Video.from(json, target)) else buildList {
-            for (i in 0 until entries.length()) entries.optJSONObject(i)?.let { add(Video.from(it)) }
-        }
+        val lease=InstagramSession.lease(context,target)
+        try {
+            lease?.let {request.addOption("--cookies",it.file.absolutePath);it.userAgent?.let {agent -> request.addOption("--user-agent",agent)}}
+            val result = YoutubeDL.getInstance().execute(request)
+            val json = JSONObject(result.out)
+            if (MediaLinks.isInstagram(target)) return@withContext InstagramPost.parse(json,target)
+            val entries = json.optJSONArray("entries")
+            if (entries == null) listOf(Video.from(json, target)) else buildList {
+                for (i in 0 until entries.length()) entries.optJSONObject(i)?.let { add(Video.from(it)) }
+            }
+        } finally {lease?.close()}
     }
 
     suspend fun inspect(context: Context, video: Video): Video = withContext(Dispatchers.IO) {
@@ -95,10 +101,14 @@ object Engine {
             addOption("--dump-single-json"); addOption("--skip-download")
             addOption("--no-playlist"); addOption("--socket-timeout", "25"); addOption("--retries", "1"); addOption("--extractor-retries", "1")
         }
-        val json=JSONObject(YoutubeDL.getInstance().execute(request).out)
-        if (MediaLinks.isInstagram(video.url)) InstagramPost.parse(json,video.url).firstOrNull { it.id==video.id }
-            ?: error("This Instagram item is no longer available. Load the post again.")
-        else Video.from(json,video.url)
+        val lease=InstagramSession.lease(context,video.url)
+        try {
+            lease?.let {request.addOption("--cookies",it.file.absolutePath);it.userAgent?.let {agent -> request.addOption("--user-agent",agent)}}
+            val json=JSONObject(YoutubeDL.getInstance().execute(request).out)
+            if (MediaLinks.isInstagram(video.url)) InstagramPost.parse(json,video.url).firstOrNull { it.id==video.id }
+                ?: error("This Instagram item is no longer available. Load the post again.")
+            else Video.from(json,video.url)
+        } finally {lease?.close()}
     }
 }
 

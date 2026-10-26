@@ -118,6 +118,14 @@ private fun FluxApp(shared: String, model: FluxModel = viewModel()) {
     val jobs by Store.downloads.collectAsState()
     val folder by Store.folder.collectAsState()
     var page by remember { mutableIntStateOf(0) }
+    val instagramConnected by InstagramSession.connected.collectAsState()
+    var previousInstagramConnection by remember { mutableStateOf(instagramConnected) }
+    LaunchedEffect(instagramConnected) {
+        val retry=instagramConnected && !previousInstagramConnection && model.error!=null && !model.busy &&
+            MediaLinks.isInstagram(runCatching {Engine.target(model.query)}.getOrDefault(""))
+        previousInstagramConnection=instagramConnected
+        if(retry) {page=0;model.search()}
+    }
     var clearDialog by remember { mutableStateOf(false) }
     val notification = androidx.activity.compose.rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val chooseFolder = androidx.activity.compose.rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -252,7 +260,12 @@ private fun Discover(model: FluxModel, onBatchQueued: ()->Unit) {
                 TinyFeature(Icons.Rounded.GraphicEq, "Original audio")
             }
         }
-        model.error?.let { message -> item { ErrorCard(message) } }
+        model.error?.let { message -> item {
+            ErrorCard(message)
+            if(MediaLinks.isInstagram(runCatching {Engine.target(model.query)}.getOrDefault(""))) {
+                Spacer(Modifier.height(12.dp));InstagramConnectionCard()
+            }
+        } }
         if (model.inspecting) item { LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Lilac) }
         if (model.results.isNotEmpty()) {
             item { SectionTitle("Found for you", "${model.results.size} result${if (model.results.size > 1) "s" else ""}") }
@@ -377,7 +390,10 @@ private fun FormatSheet(video: Video, onDownload: (MediaFormat, MediaFormat?) ->
                 }
             }
         }
-        Text(if (!audio && video.formats.none { it.audio }) "No audio stream is reported for these formats. Missing sound cannot be created."
+        Text(if (!audio && video.formats.none { it.audio }) {
+            if(video.formats.filter { it.video }.all { it.audioCodec=="none" }) "The source reports no audio stream. Missing sound cannot be created."
+            else "The source did not report audio details. Any embedded sound is kept unchanged."
+        }
             else if (!audio && sourceAudios.isNotEmpty())
             "Keeps the chosen video and audio without re-encoding. Existing embedded audio is replaced when needed. Saves as MKV. 4K describes video resolution; audio quality depends on the source."
             else "Keeps the source audio without re-encoding. Higher bitrate across different codecs does not always mean better sound. Quality missing from the source cannot be restored.",
@@ -396,6 +412,7 @@ private fun SettingsPage(folder: String, active: Boolean, model: FluxModel, onFo
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
         Text("Just your way.", fontSize = 29.sp, fontWeight = FontWeight.Bold)
         Text("A few preferences for your offline space.", color = Muted, fontSize = 13.sp)
+        InstagramConnectionCard()
         TransferSettingsCard()
         Surface(color = Panel, shape = RoundedCornerShape(20.dp)) {
             Column(Modifier.padding(18.dp)) {

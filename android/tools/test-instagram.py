@@ -38,3 +38,29 @@ with YoutubeDL({'quiet':True,'extractor_args':{'instagram':{'flux_item_id':[item
     except ExtractorError as error:assert 'no longer available' in str(error)
     else:raise AssertionError('Changed post selected another item')
 print('PASS: bundled photo formats, HTTPS candidates, mixed carousel order, native metadata processing, stable selection after reorder and missing-item rejection')
+
+# Real bundled CookieJar + authenticated extractor branch, with generated
+# credentials and a mocked API response. No fixture credential leaves this host.
+import tempfile
+with tempfile.TemporaryDirectory() as temp:
+    cookiefile=Path(temp)/'session.txt'
+    cookiefile.write_text('# Netscape HTTP Cookie File\n.instagram.com\tTRUE\t/\tTRUE\t0\tsessionid\tfixture-session\n')
+    with YoutubeDL({'quiet':True,'cookiefile':str(cookiefile)}) as ydl:
+        ie=InstagramIE(ydl)
+        assert ie._is_logged_in
+        assert 'fixture-session' in ydl.cookiejar.get_cookie_header('https://www.instagram.com/')
+        assert not ydl.cookiejar.get_cookie_header('https://cdninstagram.com/video.mp4')
+        assert not ydl.cookiejar.get_cookie_header('https://youtube.com/')
+        assert not ydl.cookiejar.get_cookie_header('http://www.instagram.com/')
+        from yt_dlp.extractor.instagram import _id_to_pk
+        api={'pk':str(_id_to_pk('DezDcSUR2Gg')),'media_type':2,'user':{'username':'fixture'},
+             'video_versions':[{'id':'video','url':'https://cdn.example.org/fixture.mp4','width':720,'height':1280}]}
+        calls=[]
+        def response(url,*args,**kwargs):
+            calls.append(url)
+            assert '/media/' in url and url.endswith('/info/')
+            return {'items':[api]}
+        ie._download_json=response
+        info=ie._real_extract('https://www.instagram.com/reel/DezDcSUR2Gg/')
+        assert info['id']=='DezDcSUR2Gg' and info['formats'] and len(calls)==1
+print('PASS: bundled CookieJar scopes session to Instagram HTTPS and saved connection selects authenticated media-info API without network access')

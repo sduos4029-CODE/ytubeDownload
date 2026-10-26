@@ -16,7 +16,7 @@ class InstagramDiagnostic(private val instrumentation: Instrumentation,private v
         check(readable.startsWith("Flux could not retrieve") && !readable.contains("requires login"))
         check(!SourceFailures.message(url,"HTTP Error 404")!!.startsWith("This Instagram post is unavailable"))
         check(SourceFailures.message(url,"HTTP Error 429")!!.contains("limiting"))
-        check(SourceFailures.message(url,"login required")!!.contains("requires login"))
+        check(SourceFailures.message(url,"login required")!!.contains("sign-in"))
         report("PASS: empty metadata including boilerplate login advice is an extraction failure, not a private/unavailable-post diagnosis")
         var preview:Video?=null
         try {

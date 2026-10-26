@@ -2,7 +2,7 @@
 
 Native Kotlin / Jetpack Compose YouTube and public Instagram post downloader for Android 8.0+.
 
-**Delivery status: version 2.1.0 implementation prepared; exact-commit build and runtime verification run in GitHub Actions.** Download, separate-stream merging, audio-only saving, progress states, cancellation, persistent history, and chosen-folder permissions passed the documented checks. Live YouTube search, thumbnails and downloads remain unverified because the environment proxy denied YouTube requests. See `TEST_REPORT.md` for exact coverage and limits. The installable signed APK is delivered separately as `Flux-v2.1.0.apk`.
+**Delivery status: version 2.1.1 implementation prepared; exact-commit build and runtime verification run in GitHub Actions.** Download, separate-stream merging, audio-only saving, progress states, cancellation, persistent history, and chosen-folder permissions passed the documented checks. Live YouTube search, thumbnails and downloads remain unverified because the environment proxy denied YouTube requests. See `TEST_REPORT.md` for exact coverage and limits. The installable signed APK is delivered separately as `Flux-v2.1.1.apk`.
 
 ## Get an APK with GitHub Actions
 
@@ -10,7 +10,7 @@ This repository keeps the app in android/. The root workflow .github/workflows/f
 
 1. Open Actions → Flux Android build and device checks.
 2. Select a successful run for your source commit.
-3. Download and unzip Flux-2.1.0-unsigned.
+3. Download and unzip Flux-2.1.1-unsigned.
 4. Verify app-release-unsigned.apk against its SHA-256 sidecar.
 5. Sign it outside GitHub with your persistent app key using Android Build Tools apksigner. Keep the owner key outside the repository and runner.
 
@@ -34,7 +34,17 @@ python3 tools/test-instagram.py
 
 Output: `app/build/outputs/apk/release/app-release-unsigned.apk` unless FLUX_SIGNING_STORE and its signing variables are supplied.
 
-## New in 2.1.0 — Instagram photos and carousels
+## New in 2.1.1 — optional on-device Instagram connection
+
+When anonymous Instagram extraction fails, Connect Instagram opens the official HTTPS Instagram login page inside a non-exported, screenshot-protected activity. The app has no JavaScript bridge or password/DOM interceptor. After signing in, explicitly tap Use this connection. The saved session enables yt-dlp's authenticated media-info path for search, inspection and downloads; a failed current Instagram search retries automatically after connecting. Anonymous mode remains the default and YouTube never receives Instagram credentials.
+
+Allowed session cookies are encrypted with AES-GCM using a non-exportable Android Keystore key in backup-disabled app storage. Each native Instagram request gets a separate owner-only temporary CookieJar scoped to Instagram HTTPS. These files are deleted in finally blocks; process-start cleanup removes interrupted files. Login browser cookies/storage are cleared on close, with process-start recovery after an interrupted login. Disconnect removes the saved ciphertext/key and this app's Instagram browser cookies/storage. Connection changes are disabled while an authenticated request is active. No session is uploaded to a Flux or third-party resolver server.
+
+Empty metadata is a Flux extraction failure, not proof that a public post is unavailable or private. The exact reported Reel DezDcSUR2Gg passed metadata, matching identity, thumbnail decoding, video download/save and video+audio track parsing in an Android API 35 diagnostic. Access still varied across request environments. A server-side anonymous prototype received login redirects and was not selected as an app backend.
+
+Generated-cookie tests verify actual authenticated API selection with mocked responses, HTTPS/domain confinement, encrypted storage, cleanup/restart and UI controls. No real Instagram account is available in CI: live authenticated-session success is **not verified**. The user must sign in on the device to validate that path for their account/network; Instagram may still deny or limit requests. This change does not promise every public/private post or remove platform restrictions.
+
+## Included from 2.1.0 — Instagram photos and carousels
 
 - Public Instagram photo/Reel/video/carousel links. Text search remains YouTube. Preview photos with pinch zoom/reset, choose individual carousel items or confirm Download all (up to 20 items).
 - Save the best returned JPEG/PNG/WebP photo without conversion. Source size is not a promise of original camera quality. Videos retain format selection and source audio/merging.
