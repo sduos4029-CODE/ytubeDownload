@@ -180,7 +180,8 @@ private fun FluxApp(shared: String, model: FluxModel = viewModel()) {
         }
     }
     model.selected?.let { video ->
-        ModalBottomSheet(onDismissRequest = { model.selected = null }, containerColor = Panel) {
+        ModalBottomSheet(onDismissRequest = { model.selected = null }, containerColor = Panel,
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             if(video.isPhoto) PhotoSheet(video) {
                 Downloads.enqueue(context,MediaDownloads.prepare(video,folder))
                 if (Build.VERSION.SDK_INT >= 33) notification.launch(Manifest.permission.POST_NOTIFICATIONS)
