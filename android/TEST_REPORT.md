@@ -1,11 +1,9 @@
-# Flux 1.6 verification
+# Flux 1.7 verification
 
-The root GitHub workflow builds the exact source commit and emits verification logs. Do not treat this source document as proof of a successful run: inspect the associated run conclusion and artifacts.
+The root GitHub workflow builds the exact source commit and emits verification logs. Inspect the associated run and verification artifacts for pass/fail evidence.
 
-Existing generated-media suites cover 4K/audio integrity, queue/retry and actual process-restart recovery, concurrency limits and simulated Wi-Fi loss/resume. New suites cover single/multiple share intent streams and read-only ClipData grants, invalid/missing files, selection limits, selective history removal, retained saved bytes, protected active/pending-save records and removal persistence after force-stop. Release UI checks cover selection, confirmation dismissal/acceptance and selection exit.
+Existing suites cover generated 4K/audio integrity, queue/retry and actual process-restart recovery, concurrency and simulated Wi-Fi, structured stream progress, Library sharing and selective history removal. New checks cover legacy/default favourite migration, JSON and process-restart persistence, combined search/type/favourite filtering, mark/unmark, provider metadata and missing-file handling, unchanged saved bytes and validated source links. Release UI checks use actual menu/filter/details/refresh/clipboard controls with scrolling.
 
-The share-intent test validates preparation and URI access within Flux. It does not automate sending files to a third-party app. Native device/platform variation, recipient behavior, real Wi-Fi/cellular handovers and live YouTube remain unverified. A full native-library security audit is pending.
+File availability means a granted provider descriptor could be opened at check time. It does not certify file integrity or continued availability. Source-copy tests remain inside the app/emulator and do not contact YouTube. Live YouTube, physical devices, third-party share recipients, OEM background behavior and full native dependency security auditing remain unverified.
 
-CI builds unsigned and signs only a separate UI-test copy using an ephemeral runner key. The owner update identity remains outside GitHub.
-
-New progress checks validate exact, estimated and unavailable values, bad input and stale estimates; real generated-media transfers must emit structured bytes/speed/ETA with separate video/audio streams and independent concurrent job IDs. Release UI checks cover stages, unavailable estimates, indeterminate merging and saving percentage. No overall job ETA is claimed.
+CI builds unsigned and signs only a separate UI-test copy with an ephemeral runner key. The owner update identity stays outside GitHub for local signing.

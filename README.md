@@ -2,7 +2,7 @@
 
 The original Python downloader remains at the repository root.
 
-The Flux Android application is in [`android/`](android/). The 1.6 upgrade adds structured stream progress, speed, ETA and download/merge/save stages while retaining source audio, 4K merging, Library views and interruption recovery.
+The Flux Android application is in [`android/`](android/). The 1.7 upgrade adds persistent Library favourites, file details and source-link copying while retaining source audio, 4K merging, Library views and interruption recovery.
 
 GitHub Actions builds the Android app, runs generated-media emulator tests and publishes an **unsigned** release artifact. The existing app-update signing key is kept outside GitHub. An unsigned CI APK is not directly installable; the verified artifact must be signed with the existing identity before updating an installed Flux app.
 

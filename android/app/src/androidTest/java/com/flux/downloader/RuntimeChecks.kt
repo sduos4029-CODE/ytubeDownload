@@ -19,6 +19,9 @@ import java.util.concurrent.Executors
 
 /** Real-device integration checks. Media is generated locally; no third-party video is downloaded. */
 class RuntimeChecks : Instrumentation() {
+    private var favouritesOnly = false
+    private var favouritesRestartOnly = false
+    private var favouritesUiOnly = false
     private var progressOnly = false
     private var progressUiOnly = false
     private var libraryOnly = false
@@ -35,6 +38,9 @@ class RuntimeChecks : Instrumentation() {
     private var restartOnly = false
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
+        favouritesOnly = arguments?.getString("favouritesOnly") == "true"
+        favouritesRestartOnly = arguments?.getString("favouritesRestartOnly") == "true"
+        favouritesUiOnly = arguments?.getString("favouritesUiOnly") == "true"
         progressOnly = arguments?.getString("progressOnly") == "true"
         progressUiOnly = arguments?.getString("progressUiOnly") == "true"
         libraryOnly = arguments?.getString("libraryOnly") == "true"
@@ -55,6 +61,11 @@ class RuntimeChecks : Instrumentation() {
     override fun onStart() {
         val result = Bundle()
         try {
+            if (favouritesOnly || favouritesRestartOnly) {
+                runBlocking { FavouritesChecks(this@RuntimeChecks,::report).run(favouritesRestartOnly) }
+                result.putString("stream",if(favouritesRestartOnly) "FAVOURITES RESTART CHECKS PASSED\n" else "FAVOURITES CHECKS PASSED\n")
+                finish(Activity.RESULT_OK,result);return
+            }
             if (progressOnly) {
                 runBlocking { ProgressChecks(this@RuntimeChecks,::report).run() }
                 result.putString("stream","PROGRESS CHECKS PASSED\n"); finish(Activity.RESULT_OK,result); return
@@ -106,7 +117,7 @@ class RuntimeChecks : Instrumentation() {
             val activity = startActivitySync(Intent(targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
             check(!activity.isFinishing) { "Activity did not launch" }
             report("PASS: APK installs and MainActivity launches")
-            if (uiOnly || queueUiOnly || transferUiOnly || libraryUiOnly || progressUiOnly) {
+            if (uiOnly || queueUiOnly || transferUiOnly || libraryUiOnly || progressUiOnly || favouritesUiOnly) {
                 fun click(label: String) {
                     var forward = true
                     val deadline = System.currentTimeMillis() + 30000
@@ -133,6 +144,26 @@ class RuntimeChecks : Instrumentation() {
                         Thread.sleep(300)
                     }
                     error("UI control not found: $label")
+                }
+                if (favouritesUiOnly) {
+                    Store.setQueuePaused(true)
+                    val item=LibraryChecks(this,::report).fixture("favourite-ui").copy(title="Favourite UI fixture",audioDescription="AAC · 44.1 kHz · Stereo")
+                    Store.add(item)
+                    click("Library");click("Compact")
+                    click("More actions for ${item.title}");click("Add to favourites")
+                    check(Store.downloads.value.first { it.id==item.id }.favourite)
+                    click("Favourites")
+                    click("More actions for ${item.title}");click("File details")
+                    click("Check file again")
+                    click("Copy source link")
+                    val copied=targetContext.getSystemService(android.content.ClipboardManager::class.java).primaryClip?.getItemAt(0)?.text?.toString()
+                    check(copied==item.url)
+                    click("Close details")
+                    click("More actions for ${item.title}");click("Remove from favourites")
+                    check(!Store.downloads.value.first { it.id==item.id }.favourite)
+                    click("Favourites")
+                    report("PASS: release Library menu marks/unmarks favourites; filter, details refresh and source-copy controls work through scrolling UI")
+                    result.putString("stream","FAVOURITES UI CHECKS PASSED\n");finish(Activity.RESULT_OK,result);return
                 }
                 if (progressUiOnly) {
                     Store.setQueuePaused(true)

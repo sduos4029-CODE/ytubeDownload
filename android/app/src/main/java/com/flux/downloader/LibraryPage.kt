@@ -39,8 +39,8 @@ enum class LibrarySort(val label: String) { Newest("Newest"), Oldest("Oldest"), 
 data class LibraryPreferences(val layout: LibraryLayout = LibraryLayout.List, val size: LibrarySize = LibrarySize.Medium,
     val sort: LibrarySort = LibrarySort.Newest)
 
-fun libraryJobs(jobs: List<Download>, query: String, kind: String, sort: LibrarySort): List<Download> {
-    val matching = jobs.filter { it.terminal && it.title.contains(query.trim(), ignoreCase = true) &&
+fun libraryJobs(jobs: List<Download>, query: String, kind: String, sort: LibrarySort, favouritesOnly: Boolean = false): List<Download> {
+    val matching = jobs.filter { it.terminal && (!favouritesOnly || it.favourite) && it.title.contains(query.trim(), ignoreCase = true) &&
         (kind == "All" || (kind == "Audio" && it.audioOnly) || (kind == "Video" && !it.audioOnly)) }
     return when (sort) {
         LibrarySort.Newest -> matching.sortedByDescending { it.created }
@@ -56,13 +56,19 @@ fun LibraryPage(jobs: List<Download>, onRetry: (Download) -> Unit) {
     var query by remember { mutableStateOf("") }
     var kind by remember { mutableStateOf("All") }
     var sortMenu by remember { mutableStateOf(false) }
+    var favouritesOnly by remember { mutableStateOf(false) }
+    var detailsId by remember { mutableStateOf<String?>(null) }
     var selecting by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf(emptySet<String>()) }
     var removal by remember { mutableStateOf(emptySet<String>()) }
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val shown = remember(jobs, query, kind, prefs.sort) { libraryJobs(jobs, query, kind, prefs.sort) }
+    val shown = remember(jobs, query, kind, prefs.sort, favouritesOnly) { libraryJobs(jobs, query, kind, prefs.sort, favouritesOnly) }
     val context = LocalContext.current
+    jobs.find { it.id == detailsId }?.let { LibraryDetailsDialog(it) { detailsId = null } }
+    fun favourite(job: Download) {
+        scope.launch { withContext(Dispatchers.IO) { Store.toggleFavourite(job.id) } }
+    }
     val chosen = jobs.filter { it.id in selected && it.terminal }
     LaunchedEffect(jobs.map { it.id to it.state }) {
         selected = selected.intersect(jobs.filter { it.terminal }.map { it.id }.toSet())
@@ -166,6 +172,10 @@ fun LibraryPage(jobs: List<Download>, onRetry: (Download) -> Unit) {
                     }
                 }
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = favouritesOnly, onClick = { favouritesOnly = !favouritesOnly },
+                        label = { Text("Favourites") }, leadingIcon = { Icon(Icons.Rounded.Favorite, null, Modifier.size(17.dp)) })
+                }
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     LibraryLayout.entries.forEach { layout ->
                         FilterChip(selected = prefs.layout == layout, onClick = { Store.setLibrary(prefs.copy(layout = layout)) },
                             label = { Text(layout.name) }, leadingIcon = { Icon(when (layout) {
@@ -192,7 +202,7 @@ fun LibraryPage(jobs: List<Download>, onRetry: (Download) -> Unit) {
             }
         }
         items(shown, key = { it.id }) { job -> LibraryCard(job, prefs, onRetry, selecting, job.id in selected,
-            busy, { toggle(job) }, { share(listOf(job)) }) }
+            busy, { toggle(job) }, { share(listOf(job)) }, { favourite(job) }, { detailsId = job.id }) }
         item(span = { GridItemSpan(maxLineSpan) }) { Spacer(Modifier.height(8.dp)) }
     }
     }
@@ -200,13 +210,27 @@ fun LibraryPage(jobs: List<Download>, onRetry: (Download) -> Unit) {
 
 @Composable
 private fun LibraryCard(job: Download, prefs: LibraryPreferences, onRetry: (Download) -> Unit,
-    selecting: Boolean, selected: Boolean, busy: Boolean, onSelect: () -> Unit, onShare: () -> Unit) {
+    selecting: Boolean, selected: Boolean, busy: Boolean, onSelect: () -> Unit, onShare: () -> Unit,
+    onFavourite: () -> Unit, onDetails: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val context = LocalContext.current
     val compact = prefs.layout == LibraryLayout.Compact
     val grid = prefs.layout == LibraryLayout.Grid
     val small = prefs.size == LibrarySize.Small
     val large = prefs.size == LibrarySize.Large
+    var actions by remember { mutableStateOf(false) }
+    @Composable fun actionsMenu() {
+        Box {
+            IconButton(enabled = !busy, onClick = { actions = true }) { Icon(Icons.Rounded.MoreVert, "More actions for ${job.title}", tint = colors.primary) }
+            DropdownMenu(expanded = actions, onDismissRequest = { actions = false }) {
+                if (job.state == "Complete" && job.uri.isNotBlank()) DropdownMenuItem(
+                    text = { Text(if (job.favourite) "Remove from favourites" else "Add to favourites") },
+                    onClick = { actions = false; onFavourite() }, leadingIcon = { Icon(Icons.Rounded.Favorite, null) })
+                DropdownMenuItem(text = { Text("File details") }, onClick = { actions = false; onDetails() }, leadingIcon = { Icon(Icons.Rounded.Info, null) })
+                if (job.state == "Complete") DropdownMenuItem(text = { Text("Share file") }, onClick = { actions = false; onShare() }, leadingIcon = { Icon(Icons.Rounded.Share, null) })
+            }
+        }
+    }
     fun open() {
         runCatching { context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(job.uri), job.mime)
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }
@@ -221,16 +245,14 @@ private fun LibraryCard(job: Download, prefs: LibraryPreferences, onRetry: (Down
                 if (!grid) LibraryThumbnail(job, Modifier.size(when { compact -> 44.dp; small -> 60.dp; large -> 112.dp; else -> 80.dp },
                     when { compact -> 38.dp; small -> 48.dp; large -> 84.dp; else -> 60.dp }))
                 Column(Modifier.weight(1f).padding(start = if (grid) 0.dp else 12.dp)) {
-                    Text(job.title, maxLines = if (compact) 1 else if (large) 3 else 2, overflow = TextOverflow.Ellipsis,
+                    Text(if (job.favourite) "★ ${job.title}" else job.title, maxLines = if (compact) 1 else if (large) 3 else 2, overflow = TextOverflow.Ellipsis,
                         fontSize = if (compact || small) 12.sp else if (large) 17.sp else 14.sp, fontWeight = FontWeight.SemiBold)
                     Text("${if (job.audioOnly) "Audio" else "Video"} · ${job.label}${if (job.bytes > 0) " · ${sizeLabel(job.bytes)}" else ""}",
                         color = colors.onSurfaceVariant, fontSize = 10.sp, maxLines = 2,
                         modifier = Modifier.padding(top = 5.dp), overflow = TextOverflow.Ellipsis)
                     if (compact && job.state != "Complete") Text(job.state, color = colors.error, fontSize = 10.sp)
                 }
-                if (compact && !selecting && job.state == "Complete") IconButton(enabled = !busy, onClick = onShare) {
-                    Icon(Icons.Rounded.Share, "Share ${job.title}", tint = colors.primary)
-                }
+                if (compact && !selecting) actionsMenu()
                 if (compact && !selecting) IconButton(onClick = { if (job.state == "Complete") open() else onRetry(job) }) {
                     Icon(if (job.state == "Complete") Icons.Rounded.PlayArrow else Icons.Rounded.Refresh,
                         if (job.state == "Complete") "Open ${job.title}" else "Retry ${job.title}", tint = colors.primary)
@@ -244,9 +266,7 @@ private fun LibraryCard(job: Download, prefs: LibraryPreferences, onRetry: (Down
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(if (job.state == "Complete") java.text.DateFormat.getDateInstance(java.text.DateFormat.SHORT).format(java.util.Date(job.created))
                         else job.state, color = colors.onSurfaceVariant, fontSize = 10.sp, modifier = Modifier.weight(1f))
-                    if (!selecting && job.state == "Complete") IconButton(enabled = !busy, onClick = onShare) {
-                        Icon(Icons.Rounded.Share, "Share ${job.title}", tint = colors.primary, modifier = Modifier.size(19.dp))
-                    }
+                    if (!selecting) actionsMenu()
                     if (!selecting) TextButton(onClick = { if (job.state == "Complete") open() else onRetry(job) }, contentPadding = PaddingValues(horizontal = 6.dp)) {
                         Icon(if (job.state == "Complete") Icons.Rounded.PlayArrow else Icons.Rounded.Refresh, null, Modifier.size(18.dp))
                         Text(if (job.state == "Complete") "Open" else "Retry", fontSize = 12.sp)
