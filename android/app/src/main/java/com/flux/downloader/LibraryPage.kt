@@ -39,8 +39,9 @@ enum class LibrarySort(val label: String) { Newest("Newest"), Oldest("Oldest"), 
 data class LibraryPreferences(val layout: LibraryLayout = LibraryLayout.List, val size: LibrarySize = LibrarySize.Medium,
     val sort: LibrarySort = LibrarySort.Newest)
 
-fun libraryJobs(jobs: List<Download>, query: String, kind: String, sort: LibrarySort, favouritesOnly: Boolean = false): List<Download> {
-    val matching = jobs.filter { it.terminal && (!favouritesOnly || it.favourite) && it.title.contains(query.trim(), ignoreCase = true) &&
+fun libraryJobs(jobs: List<Download>, query: String, kind: String, sort: LibrarySort, favouritesOnly: Boolean = false,
+    status: LibraryStatus = LibraryStatus.All): List<Download> {
+    val matching = jobs.filter { it.terminal && (status.state == null || it.state == status.state) && (!favouritesOnly || it.favourite) && it.title.contains(query.trim(), ignoreCase = true) &&
         (kind == "All" || (kind == "Audio" && it.audioOnly) || (kind == "Video" && !it.audioOnly)) }
     return when (sort) {
         LibrarySort.Newest -> matching.sortedByDescending { it.created }
@@ -57,6 +58,8 @@ fun LibraryPage(jobs: List<Download>, onRetry: (Download) -> Unit, onDownloadAga
     var kind by remember { mutableStateOf("All") }
     var sortMenu by remember { mutableStateOf(false) }
     var favouritesOnly by remember { mutableStateOf(false) }
+    var status by remember { mutableStateOf(LibraryStatus.All) }
+    var statusMenu by remember { mutableStateOf(false) }
     var detailsId by remember { mutableStateOf<String?>(null) }
     var repeatId by remember { mutableStateOf<String?>(null) }
     var selecting by remember { mutableStateOf(false) }
@@ -64,7 +67,7 @@ fun LibraryPage(jobs: List<Download>, onRetry: (Download) -> Unit, onDownloadAga
     var removal by remember { mutableStateOf(emptySet<String>()) }
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val shown = remember(jobs, query, kind, prefs.sort, favouritesOnly) { libraryJobs(jobs, query, kind, prefs.sort, favouritesOnly) }
+    val shown = remember(jobs, query, kind, prefs.sort, favouritesOnly, status) { libraryJobs(jobs, query, kind, prefs.sort, favouritesOnly, status) }
     val context = LocalContext.current
     jobs.find { it.id == detailsId }?.let { job -> LibraryDetailsDialog(job,
         onDownloadAgain = { detailsId = null; repeatId = job.id }, onDismiss = { detailsId = null }) }
@@ -75,6 +78,21 @@ fun LibraryPage(jobs: List<Download>, onRetry: (Download) -> Unit, onDownloadAga
         scope.launch { withContext(Dispatchers.IO) { Store.toggleFavourite(job.id) } }
     }
     val chosen = jobs.filter { it.id in selected && it.terminal }
+    val summary = remember(chosen) { selectionSummary(chosen) }
+    val eligibleFavourites = chosen.filter { it.state == "Complete" && it.uri.isNotBlank() }
+    fun setFavourites(value: Boolean) {
+        if (busy) return
+        val ids = selected
+        busy = true
+        scope.launch {
+            try {
+                val count = withContext(Dispatchers.IO) { Store.setFavourites(ids, value) }
+                Toast.makeText(context, "$count favourites updated", Toast.LENGTH_SHORT).show()
+            } catch (e: CancellationException) { throw e
+            } catch (_: Exception) { Toast.makeText(context, "Could not update favourites. Try again.", Toast.LENGTH_LONG).show()
+            } finally { busy = false }
+        }
+    }
     LaunchedEffect(jobs.map { it.id to it.state }) {
         selected = selected.intersect(jobs.filter { it.terminal }.map { it.id }.toSet())
     }
@@ -144,6 +162,14 @@ fun LibraryPage(jobs: List<Download>, onRetry: (Download) -> Unit, onDownloadAga
                     onClick = { share(chosen) }) { Icon(Icons.Rounded.Share, null, Modifier.size(18.dp)); Text(" Share files") }
                 OutlinedButton(enabled = !busy && chosen.isNotEmpty(), onClick = { removal = selected }) { Text("Remove history") }
             }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(modifier = Modifier.weight(1f), enabled = !busy && eligibleFavourites.any { !it.favourite },
+                    onClick = { setFavourites(true) }) { Icon(Icons.Rounded.Favorite, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("Favourite") }
+                TextButton(modifier = Modifier.weight(1f), enabled = !busy && eligibleFavourites.any { it.favourite },
+                    onClick = { setFavourites(false) }) { Icon(Icons.Rounded.FavoriteBorder, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("Unfavourite") }
+            }
+            Text(summary.label, fontSize = 11.sp, color = colors.onSurfaceVariant)
+            Text("Recorded sizes; files may have changed. Selection stays across filters.", fontSize = 10.sp, color = colors.onSurfaceVariant)
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 6.dp))
         }
     }
@@ -179,6 +205,16 @@ fun LibraryPage(jobs: List<Download>, onRetry: (Download) -> Unit, onDownloadAga
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(selected = favouritesOnly, onClick = { favouritesOnly = !favouritesOnly },
                         label = { Text("Favourites") }, leadingIcon = { Icon(Icons.Rounded.Favorite, null, Modifier.size(17.dp)) })
+                    Box {
+                        OutlinedButton(onClick = { statusMenu = true }, contentPadding = PaddingValues(horizontal = 12.dp)) {
+                            Icon(Icons.Rounded.FilterList, null, Modifier.size(17.dp)); Spacer(Modifier.width(5.dp)); Text("Status: ${status.label}")
+                        }
+                        DropdownMenu(expanded = statusMenu, onDismissRequest = { statusMenu = false }) {
+                            LibraryStatus.entries.forEach { option -> DropdownMenuItem(text = { Text(option.label) }, onClick = {
+                                status = option; statusMenu = false
+                            }) }
+                        }
+                    }
                 }
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     LibraryLayout.entries.forEach { layout ->
