@@ -45,6 +45,8 @@ class GalleryChecks(private val instrumentation: Instrumentation, private val re
         check(runCatching { InstagramPost.parse(JSONObject("""{"entries":[]} """),POST) }.isFailure)
         val duplicate=JSONObject("""{"entries":[{"id":"same","formats":[{"format_id":"v","ext":"mp4","vcodec":"avc1"}]},{"id":"same","formats":[{"format_id":"v","ext":"mp4","vcodec":"avc1"}]}]}""")
         check(runCatching { InstagramPost.parse(duplicate,POST) }.isFailure)
+        val unavailable=SourceFailures.message(POST,"Instagram sent an empty media response. Try login or cookies for authentication.")!!
+        check(unavailable.startsWith("Flux could not retrieve") && !unavailable.contains("requires login"))
         check(SourceFailures.message(POST,"HTTP Error 429")!!.contains("limiting"))
         check(SourceFailures.message(POST,"login required")!!.contains("private"))
         Fixture().use { server ->

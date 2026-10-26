@@ -1,0 +1,71 @@
+package com.flux.downloader
+
+import android.app.Instrumentation
+import android.webkit.*
+import kotlinx.coroutines.*
+import org.json.JSONObject
+import org.json.JSONTokener
+import java.util.concurrent.atomic.AtomicInteger
+
+/** Diagnostic only: no accounts, cookie export, third-party provider or release bypass. */
+class InstagramDiagnostic(private val instrumentation: Instrumentation,private val report: (String)->Unit) {
+    private val url="https://www.instagram.com/reel/DezDcSUR2Gg/"
+    suspend fun run() {
+        val raw="Instagram sent an empty media response. Check if this post is accessible without login; use cookies for authentication."
+        val readable=SourceFailures.message(url,raw)!!
+        check(readable.startsWith("Flux could not retrieve") && !readable.contains("requires login"))
+        check(!SourceFailures.message(url,"HTTP Error 404")!!.startsWith("This Instagram post is unavailable"))
+        check(SourceFailures.message(url,"HTTP Error 429")!!.contains("limiting"))
+        check(SourceFailures.message(url,"login required")!!.contains("requires login"))
+        report("PASS: empty metadata including boilerplate login advice is an extraction failure, not a private/unavailable-post diagnosis")
+        try {
+            val items=withTimeout(90000) { Engine.search(instrumentation.targetContext,url) }
+            report("EXTRACTOR: metadata returned; items=${items.size}; formats=${items.sumOf { it.formats.size }}")
+        } catch(_: Exception) { report("EXTRACTOR: no usable metadata for the reported public Reel") }
+
+        val activity=instrumentation.startActivitySync(android.content.Intent(instrumentation.targetContext,MainActivity::class.java)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
+        var browser: WebView?=null
+        val finished=AtomicInteger(0)
+        try {
+            instrumentation.runOnMainSync {
+                browser=WebView(activity).apply {
+                    settings.javaScriptEnabled=true
+                    settings.domStorageEnabled=true
+                    settings.allowFileAccess=false
+                    settings.allowContentAccess=false
+                    settings.mixedContentMode=WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                    webViewClient=object: WebViewClient() {
+                        override fun onPageFinished(view: WebView?, location: String?) { finished.incrementAndGet() }
+                        override fun shouldOverrideUrlLoading(view: WebView?,request: WebResourceRequest?): Boolean {
+                            val uri=request?.url ?: return true
+                            return uri.scheme!="https" || uri.host !in setOf("www.instagram.com","instagram.com")
+                        }
+                    }
+                    activity.setContentView(this)
+                    loadUrl(this@InstagramDiagnostic.url)
+                }
+                report("WEBVIEW: package=${WebView.getCurrentWebViewPackage()?.versionName.orEmpty()}")
+            }
+            repeat(12) { index ->
+                delay(5000)
+                val snapshot=CompletableDeferred<String>()
+                instrumentation.runOnMainSync { browser!!.evaluateJavascript("""
+                    JSON.stringify((()=>{const v=document.querySelector('video');const t=document.body?.innerText||'';
+                    return {host:location.hostname,path:location.pathname,title:document.title,
+                      videos:document.querySelectorAll('video').length,
+                      sourceKind:v?.currentSrc?.startsWith('https:')?'https':v?.currentSrc?.startsWith('blob:')?'blob':'none',
+                      poster:!!v?.poster,ogImage:!!document.querySelector('meta[property="og:image"]'),
+                      loginText:/log in|sign in/i.test(t),errorText:/something went wrong|page isn't available|page is not available/i.test(t)};})())
+                """.trimIndent()) { snapshot.complete(it) } }
+                val encoded=withTimeout(10000) { snapshot.await() }
+                val decoded=JSONTokener(encoded).nextValue() as? String ?: "{}"
+                val json=JSONObject(decoded)
+                report("WEBVIEW ${index+1}: $json; pageFinishes=${finished.get()}")
+                if(json.optInt("videos")>0 && json.optString("sourceKind")!="none")return
+            }
+        } finally {
+            instrumentation.runOnMainSync { browser?.stopLoading();browser?.destroy();activity.finish() }
+        }
+    }
+}
