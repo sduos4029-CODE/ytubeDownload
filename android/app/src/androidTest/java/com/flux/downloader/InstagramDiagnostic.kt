@@ -18,23 +18,26 @@ class InstagramDiagnostic(private val instrumentation: Instrumentation,private v
         check(SourceFailures.message(url,"HTTP Error 429")!!.contains("limiting"))
         check(SourceFailures.message(url,"login required")!!.contains("requires login"))
         report("PASS: empty metadata including boilerplate login advice is an extraction failure, not a private/unavailable-post diagnosis")
+        var preview:Video?=null
         try {
             val items=withTimeout(90000) { Engine.search(instrumentation.targetContext,url) }
-            report("EXTRACTOR: metadata returned; items=${items.size}; formats=${items.sumOf { it.formats.size }}")
+            preview=items.firstOrNull { !it.isPhoto }
+            report("EXTRACTOR: metadata returned; ids=${items.map { it.id }}; items=${items.size}; formats=${items.sumOf { it.formats.size }}")
         } catch(error: Exception) {
             val category=if(error.message.orEmpty().contains("empty media response",true)) "EMPTY_MEDIA_RESPONSE" else error.javaClass.simpleName
             report("EXTRACTOR: no usable metadata for the reported public Reel; category=$category")
         }
-        try {
-            val control=withTimeout(90000) { Engine.search(instrumentation.targetContext,"https://www.instagram.com/reel/Chunk8-jurw/") }
-            report("CONTROL: metadata returned; items=${control.size}; formats=${control.sumOf { it.formats.size }}")
-        } catch(error: Exception) { report("CONTROL: metadata unavailable; category=${error.javaClass.simpleName}") }
-
         val activity=instrumentation.startActivitySync(android.content.Intent(instrumentation.targetContext,MainActivity::class.java)
             .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
         var browser: WebView?=null
         val finished=AtomicInteger(0)
         try {
+            InstagramLiveCheck(instrumentation,report,sourceUrl=url,checkThumbnail=true,preview=preview).run()
+            try {
+                val control=withTimeout(90000) { Engine.search(instrumentation.targetContext,"https://www.instagram.com/reel/Chunk8-jurw/") }
+                report("CONTROL: metadata returned; items=${control.size}; formats=${control.sumOf { it.formats.size }}")
+            } catch(error: Exception) { report("CONTROL: metadata unavailable; category=${error.javaClass.simpleName}") }
+
             instrumentation.runOnMainSync {
                 browser=WebView(activity).apply {
                     settings.javaScriptEnabled=true
@@ -54,7 +57,7 @@ class InstagramDiagnostic(private val instrumentation: Instrumentation,private v
                 }
                 report("WEBVIEW: package=${WebView.getCurrentWebViewPackage()?.versionName.orEmpty()}")
             }
-            repeat(12) { index ->
+            for(index in 0 until 12) {
                 delay(5000)
                 val snapshot=CompletableDeferred<String>()
                 instrumentation.runOnMainSync { browser!!.evaluateJavascript("""
@@ -69,8 +72,10 @@ class InstagramDiagnostic(private val instrumentation: Instrumentation,private v
                 val decoded=JSONTokener(encoded).nextValue() as? String ?: "{}"
                 val json=JSONObject(decoded)
                 report("WEBVIEW ${index+1}: $json; pageFinishes=${finished.get()}")
-                if(json.optInt("videoWidth")>0 && json.optInt("readyState")>=2)return
+                if(json.optInt("videoWidth")>0 && json.optInt("readyState")>=2)break
             }
+            instrumentation.runOnMainSync { browser?.stopLoading();browser?.destroy();browser=null
+                activity.setContentView(android.widget.TextView(activity).apply { text="Testing reported Reel download" }) }
         } finally {
             instrumentation.runOnMainSync { browser?.stopLoading();browser?.destroy();activity.finish() }
         }
