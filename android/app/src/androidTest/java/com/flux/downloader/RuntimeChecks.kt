@@ -19,6 +19,8 @@ import java.util.concurrent.Executors
 
 /** Real-device integration checks. Media is generated locally; no third-party video is downloaded. */
 class RuntimeChecks : Instrumentation() {
+    private var progressOnly = false
+    private var progressUiOnly = false
     private var libraryOnly = false
     private var libraryRestartOnly = false
     private var libraryUiOnly = false
@@ -33,6 +35,8 @@ class RuntimeChecks : Instrumentation() {
     private var restartOnly = false
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
+        progressOnly = arguments?.getString("progressOnly") == "true"
+        progressUiOnly = arguments?.getString("progressUiOnly") == "true"
         libraryOnly = arguments?.getString("libraryOnly") == "true"
         libraryRestartOnly = arguments?.getString("libraryRestartOnly") == "true"
         libraryUiOnly = arguments?.getString("libraryUiOnly") == "true"
@@ -51,6 +55,10 @@ class RuntimeChecks : Instrumentation() {
     override fun onStart() {
         val result = Bundle()
         try {
+            if (progressOnly) {
+                runBlocking { ProgressChecks(this@RuntimeChecks,::report).run() }
+                result.putString("stream","PROGRESS CHECKS PASSED\n"); finish(Activity.RESULT_OK,result); return
+            }
             if (libraryOnly || libraryRestartOnly) {
                 val checks = LibraryChecks(this, ::report)
                 if (libraryRestartOnly) checks.restart() else runBlocking { checks.run() }
@@ -98,7 +106,7 @@ class RuntimeChecks : Instrumentation() {
             val activity = startActivitySync(Intent(targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
             check(!activity.isFinishing) { "Activity did not launch" }
             report("PASS: APK installs and MainActivity launches")
-            if (uiOnly || queueUiOnly || transferUiOnly || libraryUiOnly) {
+            if (uiOnly || queueUiOnly || transferUiOnly || libraryUiOnly || progressUiOnly) {
                 fun click(label: String) {
                     var forward = true
                     val deadline = System.currentTimeMillis() + 30000
@@ -125,6 +133,48 @@ class RuntimeChecks : Instrumentation() {
                         Thread.sleep(300)
                     }
                     error("UI control not found: $label")
+                }
+                if (progressUiOnly) {
+                    Store.setQueuePaused(true)
+                    val fixture=Download(id="progress-ui",url="https://www.youtube.com/watch?v=fixture",title="Progress UI fixture",thumbnail="",selector="video+audio",label="2160p",audioOnly=false,duration=6,folder="",state="Downloading")
+                    Store.add(fixture)
+                    val sample=TransferSnapshot(1048576,4194304,false,null,null,"video","Video stream")
+                    TransferProgress.record(fixture.id,sample)
+                    click("Downloads")
+                    fun visible(label:String):Boolean {
+                        fun find(node:android.view.accessibility.AccessibilityNodeInfo?):Boolean {
+                            if(node==null)return false
+                            if(node.isVisibleToUser && node.text?.toString()?.contains(label)==true)return true
+                            return (0 until node.childCount).any { find(node.getChild(it)) }
+                        }
+                        return find(uiAutomation.rootInActiveWindow)
+                    }
+                    fun requireVisible(label:String) {
+                        var forward=true
+                        repeat(20) {
+                            if (visible(label)) return
+                            fun scrollable(node:android.view.accessibility.AccessibilityNodeInfo?):android.view.accessibility.AccessibilityNodeInfo? {
+                                if(node==null)return null
+                                if(node.isScrollable)return node
+                                for(i in 0 until node.childCount) { val found=scrollable(node.getChild(i));if(found!=null)return found }
+                                return null
+                            }
+                            val area=scrollable(uiAutomation.rootInActiveWindow)
+                            val action=if(forward) android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD else android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+                            if(area?.performAction(action)!=true)forward=!forward
+                            Thread.sleep(300)
+                        }
+                        error("Progress UI label not visible after scrolling: $label")
+                    }
+                    listOf("Video stream","1 · Download","2 · Merge","3 · Save","Speed unavailable","Time unavailable").forEach(::requireVisible)
+                    Store.change(fixture.id,true) { it.copy(state="Merging",detail="Combining video + selected audio · no quality loss") }
+                    Thread.sleep(1000); requireVisible("Combining video + selected audio")
+                    Store.change(fixture.id,true) { it.copy(state="Saving",progress=42f,detail="Saving to your download folder") }
+                    Thread.sleep(1000); requireVisible("42%")
+                    TransferProgress.clear(fixture.id)
+                    Store.change(fixture.id,true) { it.copy(state="Cancelled") }
+                    report("PASS: release progress UI shows stream/stage labels, honest unknown estimates, indeterminate merge and saving percentage")
+                    result.putString("stream","PROGRESS UI CHECKS PASSED\n"); finish(Activity.RESULT_OK,result); return
                 }
                 if (libraryUiOnly) {
                     Store.setQueuePaused(true)

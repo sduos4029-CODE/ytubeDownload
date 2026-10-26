@@ -127,6 +127,7 @@ private class DownloadTask(
 
     suspend fun run(job: Download) = withContext(Dispatchers.IO) {
         lastUpdate = 0L
+        TransferProgress.clear(jobId)
         val work = Downloads.workDir(applicationContext, jobId)
         Store.workStarted(job)
         try {
@@ -143,6 +144,7 @@ private class DownloadTask(
             checkControl()
             val request = Engine.secureOptions(YoutubeDLRequest(job.url)).apply {
                 addOption("--no-playlist"); addOption("--no-mtime"); addOption("--newline")
+                addOption("--progress"); addOption("--progress-template", TransferProgress.TEMPLATE)
                 addOption("--continue"); addOption("--part"); addOption("--abort-on-unavailable-fragments")
                 addOption("--socket-timeout", "30"); addOption("--retries", "2"); addOption("--fragment-retries", "2")
                 addOption("--concurrent-fragments", "3"); addOption("--format", job.selector)
@@ -160,6 +162,7 @@ private class DownloadTask(
             require(result.extension.lowercase() in setOf("mkv", "mp4", "webm", "m4a", "mp3", "opus", "ogg", "flac", "wav", "aac", "mov")) {
                 "The source returned an unsupported file type. No file was saved."
             }
+            TransferProgress.clear(jobId)
             update("Saving", 0f, "Saving to your download folder")
             val (uri, mime) = save(result, job)
             checkControl()
@@ -200,6 +203,7 @@ private class DownloadTask(
             }
         } finally {
             withContext(NonCancellable) {
+                TransferProgress.clear(jobId)
                 val current = Store.downloads.value.find { it.id == jobId }
                 if (current != null && current.pendingUri.isNotBlank() && current.state != "Complete") {
                     runCatching { Downloads.cleanupPending(applicationContext, current) }.onFailure {
@@ -234,33 +238,48 @@ private class DownloadTask(
     private suspend fun execute(request: YoutubeDLRequest, job: Download) = coroutineScope {
         val process = async(Dispatchers.IO) {
             checkControl()
-            YoutubeDL.getInstance().execute(request, jobId) { progress, _, line ->
+            YoutubeDL.getInstance().execute(request, jobId) { _, _, line ->
                 val state = Store.downloads.value.find { it.id == jobId }?.state
                 if (!NetworkGate.allowed() && state == "Downloading") networkInterrupted = true
                 if (state in setOf("Pausing", "Paused", "Cancelled") || isStopped || networkInterrupted) {
                     runCatching { YoutubeDL.getInstance().destroyProcessById(jobId) }
                 } else {
                     val now = System.currentTimeMillis()
-                    val merging = line.contains("[Merger]", true) || line.contains("Merging formats", true)
+                    val merging = line.startsWith("[Merger]", true) || line.startsWith("Merging formats", true)
                     val firstMerge = merging && state != "Merging"
-                    if (firstMerge || now - lastUpdate > 650) {
+                    val sample = TransferProgress.parse(line)
+                    val previous = TransferProgress.live.value[jobId]
+                    val changedStream = sample != null && (sample.format != previous?.format || sample.stream != previous?.stream)
+                    if (firstMerge || (sample != null && state != "Merging" && (changedStream || now - lastUpdate > 650 || sample.percent == 100f))) {
                         lastUpdate = now
-                        if (firstMerge || state == "Merging") update("Merging", 0f, "Combining video + selected audio · no quality loss")
-                        else update("Downloading", progress.coerceIn(0f, 100f), line.substringAfter("[download]", line).trim().take(140))
+                        if (firstMerge) {
+                            TransferProgress.clear(jobId)
+                            update("Merging", 0f, "Combining video + selected audio · no quality loss")
+                        } else if (sample != null) {
+                            TransferProgress.record(jobId, sample)
+                            update("Downloading", sample.percent ?: 0f, "${sample.stream} · current stream progress")
+                        }
                         val current = Store.downloads.value.find { it.id == jobId }
-                        post(notification(job.title, current?.let { "${it.state} · ${it.detail}" } ?: "Downloading",
-                            progress.toInt().coerceIn(0, 100), true, current?.state == "Merging"))
+                        post(notification(job.title, if (sample != null && !firstMerge) "${sample.stream} · ${sample.speedLabel} · ${sample.etaLabel}"
+                            else current?.detail ?: "Downloading", current?.progress?.toInt()?.coerceIn(0, 100) ?: 0, true,
+                            current?.state == "Merging" || sample?.percent == null))
                     }
                 }
             }
         }
         try {
+            var staleNotice = -1L
             while (!process.isCompleted) {
                 currentCoroutineContext().ensureActive()
                 val state = Store.downloads.value.find { it.id == jobId }?.state
                 if (!NetworkGate.allowed() && state == "Downloading") networkInterrupted = true
                 if (state in setOf("Pausing", "Paused", "Cancelled") || networkInterrupted) {
                     runCatching { YoutubeDL.getInstance().destroyProcessById(jobId) }
+                }
+                val sample = TransferProgress.live.value[jobId]
+                if (state == "Downloading" && sample != null && !sample.fresh(android.os.SystemClock.elapsedRealtime()) && staleNotice != sample.updated) {
+                    staleNotice = sample.updated
+                    post(notification(job.title, "${sample.stream} · waiting for progress · ${sample.byteLabel}", 0, true, true))
                 }
                 delay(150)
             }
@@ -283,6 +302,9 @@ private class DownloadTask(
         Store.change(jobId) {
             if (it.state in setOf("Pausing", "Paused", "Cancelled", "Complete")) it else it.copy(state = state, progress = progress, detail = detail)
         }
+        val current = Store.downloads.value.find { it.id == jobId }
+        if (current?.state == "Saving") post(notification(current.title, "Saving · ${current.detail}",
+            current.progress.toInt().coerceIn(0, 100), true))
     }
 
     private suspend fun save(file: File, job: Download): Pair<Uri, String> {

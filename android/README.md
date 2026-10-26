@@ -2,7 +2,7 @@
 
 Native Kotlin / Jetpack Compose YouTube downloader for Android 8.0+.
 
-**Delivery status: version 1.5.0 implementation prepared; exact-commit build and runtime verification run in GitHub Actions.** Download, separate-stream merging, audio-only saving, progress states, cancellation, persistent history, and chosen-folder permissions passed the documented checks. Live YouTube search, thumbnails and downloads remain unverified because the environment proxy denied YouTube requests. See `TEST_REPORT.md` for exact coverage and limits. The installable signed APK is delivered separately as `Flux-v1.5.0.apk`.
+**Delivery status: version 1.6.0 implementation prepared; exact-commit build and runtime verification run in GitHub Actions.** Download, separate-stream merging, audio-only saving, progress states, cancellation, persistent history, and chosen-folder permissions passed the documented checks. Live YouTube search, thumbnails and downloads remain unverified because the environment proxy denied YouTube requests. See `TEST_REPORT.md` for exact coverage and limits. The installable signed APK is delivered separately as `Flux-v1.6.0.apk`.
 
 ## Get an APK with GitHub Actions
 
@@ -10,7 +10,7 @@ This repository keeps the app in android/. The root workflow .github/workflows/f
 
 1. Open Actions → Flux Android build and device checks.
 2. Select a successful run for your source commit.
-3. Download and unzip Flux-1.5.0-unsigned.
+3. Download and unzip Flux-1.6.0-unsigned.
 4. Verify app-release-unsigned.apk against its SHA-256 sidecar.
 5. Sign it outside GitHub with your persistent app key using Android Build Tools apksigner. Keep the owner key outside the repository and runner.
 
@@ -23,6 +23,9 @@ Install Android Studio, Java 17 (or a compatible Gradle JDK), Android SDK Platfo
 On Linux or macOS, with `curl`, `unzip`, and `sha256sum` installed:
 
 ```sh
+curl --fail --location --proto '=https' https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp -o /tmp/flux-upstream-ytdlp
+python3 tools/package-extractor.py /tmp/flux-upstream-ytdlp
+python3 tools/test-network-policy.py
 ./gradlew assembleRelease lintRelease
 ```
 
@@ -30,7 +33,15 @@ On Linux or macOS, with `curl`, `unzip`, and `sha256sum` installed:
 
 Output: `app/build/outputs/apk/release/app-release-unsigned.apk` unless FLUX_SIGNING_STORE and its signing variables are supplied.
 
-## New in 1.5.0
+## New in 1.6.0
+
+- Structured current-stream progress: transferred/total bytes, reported speed and estimated remaining time. Estimated totals and percentages carry a tilde.
+- Video, audio and combined stream labels. Stream switching resets the percentage for the new stream; it is not whole-download progress.
+- Download / Merge / Save stage display. Merge remains indeterminate; saving shows local file-copy percentage. ETA excludes later streams, merging and saving.
+- Unknown values stay unavailable. Rates older than five seconds disappear; live metrics are memory-only and reset after interruption/restart.
+- Every concurrent task keeps independent telemetry. Existing file sharing, quality, resume, folder and Library controls remain.
+
+## Included from 1.5.0
 
 - Share one saved download or select up to 100 files for the Android share sheet. Only selected content URIs receive temporary read access; Flux grants no write access.
 - Library multi-select works with List, Grid and Compact views. Select results chooses up to 100 matching results across the current search/type filter; Done or Android Back leaves selection mode.

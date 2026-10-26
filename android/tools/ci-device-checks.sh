@@ -17,6 +17,7 @@ check restartOnly 'RESTART CHECKS PASSED'
 check transferOnly 'TRANSFER CHECKS PASSED'
 adb shell am force-stop com.flux.downloader
 check transferPrefsOnly 'TRANSFER PREFERENCE CHECKS PASSED'
+check progressOnly 'PROGRESS CHECKS PASSED'
 check libraryOnly 'LIBRARY ACTION CHECKS PASSED'
 adb shell am force-stop com.flux.downloader
 check libraryRestartOnly 'LIBRARY RESTART CHECKS PASSED'
@@ -26,5 +27,6 @@ check libraryRestartOnly 'LIBRARY RESTART CHECKS PASSED'
 adb install -r "$RUNNER_TEMP/flux-release-ui.apk"
 check transferUiOnly 'TRANSFER UI CHECKS PASSED'
 check libraryUiOnly 'LIBRARY UI CHECKS PASSED'
+check progressUiOnly 'PROGRESS UI CHECKS PASSED'
 adb shell am start -n com.flux.downloader/.MainActivity
 adb logcat -d > test-results/logcat.txt
