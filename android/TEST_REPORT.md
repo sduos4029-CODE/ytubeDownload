@@ -1,9 +1,9 @@
-# Flux 1.9 verification
+# Flux 2.0 verification
 
-The root GitHub workflow builds the exact source commit and emits verification logs. Inspect the run conclusion and artifacts for pass/fail evidence.
+Inspect the exact-commit GitHub Actions conclusion and verification artifacts for pass/fail evidence.
 
-Existing suites cover generated 4K/audio integrity, queue/retry/restart, concurrency/Wi-Fi, structured progress, Library sharing/removal, favourites/details and repeat-download/recovery. New checks cover combined status/type/search/favourite filtering, known/unknown/overflow selection sizes, bounded idempotent bulk favourite changes, protection of non-completed entries and unchanged file bytes. A separate process restart checks favourite persistence and file access. Release UI uses actual search, status menu, filtered selection, size summary and Favourite/Unfavourite controls with scrolling.
+Existing suites cover generated 4K/audio, queue/retry/restart, concurrency/Wi-Fi, progress, Library/favourites/details/bulk actions and repeat/recovery. New platform checks cover HTTPS host/route/shared-text validation, Instagram URL and namespace preservation, honest unknown/no-audio formats, rejected photos/carousels/profiles/Threads, source-copy/repeat compatibility and process-restart persistence. A generated A/V transfer validates source audio; only the transport URL is substituted with the loopback fixture, so this is not a live Instagram download test. Release UI uses a synthetic Instagram result to select quality and queue its correct source URL, copy its source and reject a profile without stale results.
 
-Selection sizes are recorded history values for completed entries; they do not measure current disk use or certify availability. Unknown sizes are counted, failed/cancelled entries are excluded, and overflow is reported as unavailable.
+A separate host probe used the same bundled extractor with no optional impersonation backend. One upstream public Instagram Reel returned nine formats. Only metadata was retrieved. It does not certify all public posts, real Android Meta service requests or CDN downloads.
 
-Tests use generated media. Live YouTube, physical devices, provider-specific failures, third-party share recipients and full native dependency security auditing remain unverified. CI builds unsigned and signs a separate UI-test copy with an ephemeral key; the owner update key stays outside GitHub.
+Photos, carousels, Stories, profiles, Threads, private/login-required media and cookie import are unsupported in this phase. Platform access/rate limits and changes can prevent public requests. Physical devices, third-party share recipients, provider edge cases and full native dependency auditing remain unverified. The owner update key stays outside GitHub.

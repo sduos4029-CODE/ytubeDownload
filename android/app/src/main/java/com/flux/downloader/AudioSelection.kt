@@ -17,7 +17,8 @@ object AudioSelection {
     fun plan(video: Video, format: MediaFormat, selectedAudio: MediaFormat? = null): Plan {
         if (!format.video) return Plan(format.id, false, format.audioLabel)
         val separate = video.formats.filter { it.audio && !it.video }
-        if (separate.isEmpty()) return Plan(format.id, false, "Embedded source audio · ${format.audioLabel}")
+        if (separate.isEmpty()) return Plan(format.id, false, if(format.audio) "Embedded source audio · ${format.audioLabel}"
+            else if(format.audioCodec=="none") "Source reports no audio" else "Audio metadata not reported")
         require(selectedAudio == null || separate.any { it.id == selectedAudio.id }) { "Audio format is no longer available. Search again." }
         val audio = selectedAudio?.id ?: "($BEST)"
         return Plan("${format.id}+$audio", format.audio,

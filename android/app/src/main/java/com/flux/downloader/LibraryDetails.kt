@@ -17,7 +17,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.util.Locale
 
 data class SavedFileDetails(val available: Boolean, val name: String? = null, val bytes: Long? = null)
 
@@ -46,11 +45,7 @@ object LibraryDetails {
         }.getOrDefault(false)
         SavedFileDetails(available, name, bytes)
     }
-    fun source(url: String): String? = runCatching {
-        val uri = Uri.parse(url)
-        url.takeIf { url.length <= 2048 && url.none { it.isISOControl() } && uri.scheme == "https" && uri.userInfo.isNullOrEmpty() && uri.port in setOf(-1,443) &&
-            uri.host?.lowercase(Locale.ROOT) in setOf("youtube.com","www.youtube.com","m.youtube.com","music.youtube.com","youtu.be") }
-    }.getOrNull()
+    fun source(url: String): String? = MediaLinks.parse(url)?.url
 }
 
 @Composable

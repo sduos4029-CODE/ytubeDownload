@@ -139,11 +139,12 @@ private class DownloadTask(
             checkControl()
             Store.change(jobId, durable = true) {
                 if (it.state in setOf("Queued", "Retrying")) it.copy(state = "Downloading", nextAttemptAt = 0,
-                    detail = if (work.listFiles().orEmpty().isNotEmpty()) "Checking saved data · resuming where supported" else "Connecting to YouTube") else it
+                    detail = if (work.listFiles().orEmpty().isNotEmpty()) "Checking saved data · resuming where supported" else "Connecting to ${MediaLinks.parse(job.url)?.platform?.label ?: "source"}") else it
             }
             checkControl()
             val request = Engine.secureOptions(YoutubeDLRequest(job.url)).apply {
                 addOption("--no-playlist"); addOption("--no-mtime"); addOption("--newline")
+                if(MediaLinks.isInstagram(job.url)) addOption("--playlist-items", "1")
                 addOption("--progress"); addOption("--progress-template", TransferProgress.TEMPLATE)
                 addOption("--continue"); addOption("--part"); addOption("--abort-on-unavailable-fragments")
                 addOption("--socket-timeout", "30"); addOption("--retries", "2"); addOption("--fragment-retries", "2")
@@ -189,7 +190,8 @@ private class DownloadTask(
                     post(notification(job.title, "Waiting to retry · downloaded data kept", current.progress.toInt(), false))
                 } else {
                     val readable = when {
-                        message.contains("Sign in", true) || message.contains("bot", true) -> "YouTube restricted this request. Try a public video or check for a Flux update."
+                        MediaLinks.isInstagram(job.url) && (message.contains("login",true) || message.contains("sign in",true) || message.contains("403") || message.contains("429")) -> "Instagram restricted this request. Try an accessible public single-video post or retry later. Login-required/private posts are not supported."
+                        message.contains("Sign in", true) || message.contains("bot", true) -> "${MediaLinks.parse(job.url)?.platform?.label ?: "The source"} restricted this request. Try a public video or check for a Flux update."
                         message.contains("format is not available", true) -> "This format is no longer available. Search the video again."
                         message.contains("403") -> "YouTube denied this request. Check for a Flux update or try another video."
                         else -> message.takeLast(400).ifBlank { "Download failed. Check your connection and retry." }
