@@ -149,12 +149,28 @@ class RuntimeChecks : Instrumentation() {
                         }
                         return find(uiAutomation.rootInActiveWindow)
                     }
-                    check(visible("Video stream") && visible("1 · Download") && visible("2 · Merge") && visible("3 · Save"))
-                    check(visible("Speed unavailable") && visible("Time unavailable"))
+                    fun requireVisible(label:String) {
+                        var forward=true
+                        repeat(20) {
+                            if (visible(label)) return
+                            fun scrollable(node:android.view.accessibility.AccessibilityNodeInfo?):android.view.accessibility.AccessibilityNodeInfo? {
+                                if(node==null)return null
+                                if(node.isScrollable)return node
+                                for(i in 0 until node.childCount) { val found=scrollable(node.getChild(i));if(found!=null)return found }
+                                return null
+                            }
+                            val area=scrollable(uiAutomation.rootInActiveWindow)
+                            val action=if(forward) android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD else android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+                            if(area?.performAction(action)!=true)forward=!forward
+                            Thread.sleep(300)
+                        }
+                        error("Progress UI label not visible after scrolling: $label")
+                    }
+                    listOf("Video stream","1 · Download","2 · Merge","3 · Save","Speed unavailable","Time unavailable").forEach(::requireVisible)
                     Store.change(fixture.id,true) { it.copy(state="Merging",detail="Combining video + selected audio · no quality loss") }
-                    Thread.sleep(1000); check(visible("Combining video + selected audio"))
+                    Thread.sleep(1000); requireVisible("Combining video + selected audio")
                     Store.change(fixture.id,true) { it.copy(state="Saving",progress=42f,detail="Saving to your download folder") }
-                    Thread.sleep(1000); check(visible("42%"))
+                    Thread.sleep(1000); requireVisible("42%")
                     TransferProgress.clear(fixture.id)
                     Store.change(fixture.id,true) { it.copy(state="Cancelled") }
                     report("PASS: release progress UI shows stream/stage labels, honest unknown estimates, indeterminate merge and saving percentage")
