@@ -11,6 +11,7 @@ class InstagramLiveCheck(private val instrumentation: Instrumentation,private va
     private val sourceUrl: String="https://www.instagram.com/reel/Chunk8-jurw/",private val checkThumbnail: Boolean=false,private val preview: Video?=null) {
     suspend fun run() {
         val app=instrumentation.targetContext
+        Store.init(app) // Instrumentation can start before Application.onCreate finishes.
         var jobId=""
         var stage="METADATA"
         try {
