@@ -514,6 +514,7 @@ class RuntimeChecks : Instrumentation() {
                 WorkManager.getInstance(targetContext).cancelAllWork().result.get()
                 Store.downloads.value.filterNot { it.terminal }.forEach { old -> Store.change(old.id) { it.copy(state = "Cancelled") } }
                 Store.clearHistory()
+                Store.setQueuePaused(false)
                 Engine.initialize(targetContext)
                 val version = withContext(Dispatchers.IO) {
                     YoutubeDL.getInstance().execute(YoutubeDLRequest("https://www.youtube.com/").apply { addOption("--version") }).out.trim()

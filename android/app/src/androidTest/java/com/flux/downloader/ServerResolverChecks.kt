@@ -17,7 +17,7 @@ class ServerResolverChecks(private val instrumentation:Instrumentation,private v
     private val source="https://www.instagram.com/reel/ServerDemo01/"
     private val token="fixture_"+"a".repeat(36)
     suspend fun run() {
-        Store.init(app);Store.setQueuePaused(true)
+        Store.init(app);val previousPause=Store.queuePaused.value;Store.setQueuePaused(true)
         WorkManager.getInstance(app).cancelAllWork().result.get()
         withTimeout(60000) {Downloads.awaitIdle()}
         Store.downloads.value.filterNot {it.terminal}.forEach {job -> Store.change(job.id,true) {it.copy(state="Cancelled")}}
@@ -76,6 +76,7 @@ class ServerResolverChecks(private val instrumentation:Instrumentation,private v
             check(!java.security.KeyStore.getInstance("AndroidKeyStore").apply {load(null)}.containsAlias("flux.resolver.v1"))
             Store.setQueuePaused(true);withTimeout(60000) {Downloads.awaitIdle()}
         }
+        Store.setQueuePaused(previousPause)
         report("PASS: encrypted backend key, HTTPS-origin validation, YouTube credential exclusion, source binding, server metadata refresh, selected-item lease protection, actual separate video/audio download and merge/save, token/cookie exclusion from CDN and history, redirect/unsafe URL/rejected source handling and cleanup")
     }
     private inner class Fixture:AutoCloseable {
