@@ -19,6 +19,10 @@ import java.util.concurrent.Executors
 
 /** Real-device integration checks. Media is generated locally; no third-party video is downloaded. */
 class RuntimeChecks : Instrumentation() {
+    private var sessionOnly = false
+    private var sessionRestartOnly = false
+    private var sessionUiOnly = false
+    private var reportedInstagramOnly = false
     private var instagramDiagnosticOnly = false
     private var galleryOnly = false
     private var galleryRestartOnly = false
@@ -52,6 +56,10 @@ class RuntimeChecks : Instrumentation() {
     private var restartOnly = false
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
+        sessionOnly = arguments?.getString("sessionOnly") == "true"
+        sessionRestartOnly = arguments?.getString("sessionRestartOnly") == "true"
+        sessionUiOnly = arguments?.getString("sessionUiOnly") == "true"
+        reportedInstagramOnly = arguments?.getString("reportedInstagramOnly") == "true"
         instagramDiagnosticOnly = arguments?.getString("instagramDiagnosticOnly") == "true"
         galleryOnly = arguments?.getString("galleryOnly") == "true"
         galleryRestartOnly = arguments?.getString("galleryRestartOnly") == "true"
@@ -89,6 +97,17 @@ class RuntimeChecks : Instrumentation() {
     override fun onStart() {
         val result = Bundle()
         try {
+            if(sessionOnly || sessionRestartOnly) {
+                InstagramSessionChecks(this@RuntimeChecks,::report).run(sessionRestartOnly)
+                result.putString("stream",if(sessionRestartOnly) "SESSION RESTART CHECKS PASSED\n" else "SESSION CHECKS PASSED\n")
+                finish(Activity.RESULT_OK,result);return
+            }
+            if(reportedInstagramOnly) {
+                val foreground=startActivitySync(Intent(targetContext,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                runBlocking { InstagramLiveCheck(this@RuntimeChecks,::report,"https://www.instagram.com/reel/DezDcSUR2Gg/",true).run() }
+                result.putString("stream","REPORTED REEL ATTEMPT FINISHED\n")
+                finish(Activity.RESULT_OK,result);return
+            }
             if(instagramDiagnosticOnly) {
                 runBlocking { InstagramDiagnostic(this@RuntimeChecks,::report).run() }
                 result.putString("stream","INSTAGRAM DIAGNOSTIC FINISHED\n")
@@ -175,7 +194,7 @@ class RuntimeChecks : Instrumentation() {
             val activity = startActivitySync(Intent(targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
             check(!activity.isFinishing) { "Activity did not launch" }
             report("PASS: APK installs and MainActivity launches")
-            if (uiOnly || queueUiOnly || transferUiOnly || libraryUiOnly || progressUiOnly || favouritesUiOnly || repeatUiOnly || libraryToolsUiOnly || platformUiOnly || galleryUiOnly) {
+            if (uiOnly || queueUiOnly || transferUiOnly || libraryUiOnly || progressUiOnly || favouritesUiOnly || repeatUiOnly || libraryToolsUiOnly || platformUiOnly || galleryUiOnly || sessionUiOnly) {
                 // UI scenarios own synthetic job states. Drain WorkManager,
                 // including requests restored after a force-stop, first.
                 Store.setQueuePaused(true)
@@ -207,6 +226,22 @@ class RuntimeChecks : Instrumentation() {
                         Thread.sleep(300)
                     }
                     error("UI control not found: $label")
+                }
+                if(sessionUiOnly) {
+                    InstagramSession.clear(targetContext)
+                    val loginMonitor=addMonitor(InstagramLoginActivity::class.java.name,null,false)
+                    click("Settings");click("Connect Instagram")
+                    val login=loginMonitor.waitForActivityWithTimeout(10000) ?: error("Instagram login did not open")
+                    check(login.window.attributes.flags and android.view.WindowManager.LayoutParams.FLAG_SECURE != 0)
+                    removeMonitor(loginMonitor)
+                    click("Use this connection")
+                    check(!InstagramSession.connected.value)
+                    click("Close Instagram")
+                    InstagramSession.save(targetContext,InstagramSessionChecks.FIXTURE)
+                    click("Disconnect")
+                    check(!InstagramSession.connected.value && InstagramSession.active.value==0)
+                    report("PASS: release Instagram connection opens official login UI, rejects incomplete login and disconnects a generated saved session; no real account used")
+                    result.putString("stream","SESSION UI CHECKS PASSED\n");finish(Activity.RESULT_OK,result);return
                 }
                 if(galleryUiOnly) {
                     var model:FluxModel?=null
