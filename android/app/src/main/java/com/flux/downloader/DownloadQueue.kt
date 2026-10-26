@@ -7,6 +7,7 @@ import android.net.Uri
 import androidx.work.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 
 object QueueRules {
@@ -30,6 +31,9 @@ object Downloads {
     private val io = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private const val QUEUE = "flux-download-queue"
     private const val TAG = "flux-queue"
+
+    /** Wait until the current scheduler has released its native children. */
+    suspend fun awaitIdle() { execution.withLock { } }
 
     fun workDir(context: Context, id: String): File {
         require(id.matches(Regex("[a-zA-Z0-9-]{1,80}"))) { "Invalid download identifier" }

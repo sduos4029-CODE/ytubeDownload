@@ -133,7 +133,7 @@ class RuntimeChecks : Instrumentation() {
                 // including requests restored after a force-stop, first.
                 Store.setQueuePaused(true)
                 WorkManager.getInstance(targetContext).cancelAllWork().result.get()
-                runBlocking { withTimeout(60000) { Downloads.execution.lock(); Downloads.execution.unlock() } }
+                runBlocking { withTimeout(60000) { Downloads.awaitIdle() } }
                 fun click(label: String) {
                     var forward = true
                     val deadline = System.currentTimeMillis() + 30000
