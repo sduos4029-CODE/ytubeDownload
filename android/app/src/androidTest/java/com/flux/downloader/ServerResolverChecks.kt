@@ -36,7 +36,7 @@ class ServerResolverChecks(private val instrumentation:Instrumentation,private v
             check(server.resolves.get()==0)
             val videos=Engine.search(app,source)
             check(videos.single().id=="ServerItem01" && videos.single().url==source && videos.single().formats.size==2)
-            check(videos.single().thumbnail=="${server.origin}/thumb.jpg")
+            check(videos.single().thumbnail=="https://scontent.cdninstagram.com/fixture-thumb.jpg")
             val before=server.resolves.get()
             val lease=ServerResolver.downloadInfo(app,source,"ServerItem01")!!
             check(android.system.Os.stat(lease.file.absolutePath).st_mode and 63==0)
@@ -108,7 +108,7 @@ class ServerResolverChecks(private val instrumentation:Instrumentation,private v
                             "denied" -> {status="422 Unprocessable Entity";"{}".toByteArray()}
                             "redirect" -> {status="302 Found";extra="Location: $origin/forbidden\r\n";byteArrayOf()}
                             else -> JSONObject().put("protocol",1).put("expires_in",120).put("source_url",if(mode=="wrong-source")"https://www.instagram.com/reel/Different01/" else source)
-                                .put("info",JSONObject().put("id","ServerItem01").put("thumbnail","$origin/thumb.jpg").put("title","Server integration video").put("duration",6)
+                                .put("info",JSONObject().put("id","ServerItem01").put("thumbnail","https://scontent.cdninstagram.com/fixture-thumb.jpg").put("title","Server integration video").put("duration",6)
                                     .put("formats",JSONArray().put(format("v","video.mp4","mp4","avc1","none")).put(format("a","audio.m4a","m4a","none","mp4a.40.2"))))
                                 .toString().toByteArray()
                         }
