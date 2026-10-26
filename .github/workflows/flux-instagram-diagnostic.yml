@@ -1,0 +1,70 @@
+name: Flux reported Instagram Reel diagnostic
+on:
+  push:
+    branches: [fix/instagram-public-metadata]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: flux-instagram-diagnostic-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: android
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Build diagnostic instrumentation
+        run: |
+          mkdir -p "$RUNNER_TEMP/flux-android-user"
+          echo "ANDROID_USER_HOME=$RUNNER_TEMP/flux-android-user" >> "$GITHUB_ENV"
+          export ANDROID_USER_HOME="$RUNNER_TEMP/flux-android-user"
+          curl --fail --location --retry 2 --proto '=https' https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp -o "$RUNNER_TEMP/flux-upstream-ytdlp"
+          python3 tools/package-extractor.py "$RUNNER_TEMP/flux-upstream-ytdlp"
+          python3 tools/test-network-policy.py
+          python3 tools/test-instagram.py
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+          gradle --no-daemon --console=plain --max-workers=2 assembleDebug assembleDebugAndroidTest lintRelease
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Compare native extractor and Android WebView
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          cores: 2
+          ram-size: 3072M
+          disable-animations: true
+          working-directory: android
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: bash tools/ci-instagram-diagnostic.sh
+      - name: Upload diagnostic results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Flux-Instagram-diagnostic
+          path: |
+            android/test-results/instagram-diagnostic.log
+            android/app/build/reports/lint-results-release.html
+          retention-days: 14

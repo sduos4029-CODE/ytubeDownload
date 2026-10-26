@@ -19,6 +19,7 @@ import java.util.concurrent.Executors
 
 /** Real-device integration checks. Media is generated locally; no third-party video is downloaded. */
 class RuntimeChecks : Instrumentation() {
+    private var instagramDiagnosticOnly = false
     private var galleryOnly = false
     private var galleryRestartOnly = false
     private var galleryUiOnly = false
@@ -51,6 +52,7 @@ class RuntimeChecks : Instrumentation() {
     private var restartOnly = false
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
+        instagramDiagnosticOnly = arguments?.getString("instagramDiagnosticOnly") == "true"
         galleryOnly = arguments?.getString("galleryOnly") == "true"
         galleryRestartOnly = arguments?.getString("galleryRestartOnly") == "true"
         galleryUiOnly = arguments?.getString("galleryUiOnly") == "true"
@@ -87,6 +89,11 @@ class RuntimeChecks : Instrumentation() {
     override fun onStart() {
         val result = Bundle()
         try {
+            if(instagramDiagnosticOnly) {
+                runBlocking { InstagramDiagnostic(this@RuntimeChecks,::report).run() }
+                result.putString("stream","INSTAGRAM DIAGNOSTIC FINISHED\n")
+                finish(Activity.RESULT_OK,result);return
+            }
             if(galleryOnly || galleryRestartOnly) {
                 runBlocking { GalleryChecks(this@RuntimeChecks,::report).run(galleryRestartOnly) }
                 result.putString("stream",if(galleryRestartOnly) "GALLERY RESTART CHECKS PASSED\n" else "GALLERY CHECKS PASSED\n")
