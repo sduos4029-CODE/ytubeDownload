@@ -220,6 +220,14 @@ object Store {
         mutable.value = mutable.value.map { if (it.id == id) transform(it) else it }; save(durable); releaseUnusedFolders()
     }
     @Synchronized fun clearHistory() { mutable.value = mutable.value.filter { !it.terminal || it.pendingUri.isNotBlank() }; save(true); releaseUnusedFolders() }
+    @Synchronized fun removeHistory(ids: Set<String>): List<Download> {
+        val removed = mutable.value.filter { it.id in ids && it.terminal && it.pendingUri.isBlank() && !isWorking(it.id) }
+        val removedIds = removed.map { it.id }.toSet()
+        mutable.value = mutable.value.filterNot { it.id in removedIds }
+        save(true)
+        releaseUnusedFolders()
+        return removed
+    }
     @Synchronized fun setFolder(uri: String) { folder.value = uri; prefs.edit().putString("folder", uri).apply() }
     @Synchronized fun chooseFolder(context: Context, uri: Uri?) {
         if (uri != null) context.contentResolver.takePersistableUriPermission(uri,

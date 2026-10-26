@@ -19,6 +19,9 @@ import java.util.concurrent.Executors
 
 /** Real-device integration checks. Media is generated locally; no third-party video is downloaded. */
 class RuntimeChecks : Instrumentation() {
+    private var libraryOnly = false
+    private var libraryRestartOnly = false
+    private var libraryUiOnly = false
     private var transferUiOnly = false
     private var transferOnly = false
     private var transferPrefsOnly = false
@@ -30,6 +33,9 @@ class RuntimeChecks : Instrumentation() {
     private var restartOnly = false
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
+        libraryOnly = arguments?.getString("libraryOnly") == "true"
+        libraryRestartOnly = arguments?.getString("libraryRestartOnly") == "true"
+        libraryUiOnly = arguments?.getString("libraryUiOnly") == "true"
         folderOnly = arguments?.getString("folderOnly") == "true"
         uiOnly = arguments?.getString("uiOnly") == "true"
         prefsOnly = arguments?.getString("prefsOnly") == "true"
@@ -45,6 +51,12 @@ class RuntimeChecks : Instrumentation() {
     override fun onStart() {
         val result = Bundle()
         try {
+            if (libraryOnly || libraryRestartOnly) {
+                val checks = LibraryChecks(this, ::report)
+                if (libraryRestartOnly) checks.restart() else runBlocking { checks.run() }
+                result.putString("stream", if (libraryRestartOnly) "LIBRARY RESTART CHECKS PASSED\n" else "LIBRARY ACTION CHECKS PASSED\n")
+                finish(Activity.RESULT_OK,result); return
+            }
             if (transferOnly) {
                 runBlocking { TransferChecks(this@RuntimeChecks, ::report).run() }
                 result.putString("stream", "TRANSFER CHECKS PASSED\n"); finish(Activity.RESULT_OK,result); return
@@ -86,7 +98,7 @@ class RuntimeChecks : Instrumentation() {
             val activity = startActivitySync(Intent(targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
             check(!activity.isFinishing) { "Activity did not launch" }
             report("PASS: APK installs and MainActivity launches")
-            if (uiOnly || queueUiOnly || transferUiOnly) {
+            if (uiOnly || queueUiOnly || transferUiOnly || libraryUiOnly) {
                 fun click(label: String) {
                     var forward = true
                     val deadline = System.currentTimeMillis() + 30000
@@ -113,6 +125,22 @@ class RuntimeChecks : Instrumentation() {
                         Thread.sleep(300)
                     }
                     error("UI control not found: $label")
+                }
+                if (libraryUiOnly) {
+                    Store.setQueuePaused(true)
+                    val helper=LibraryChecks(this,::report)
+                    val one=helper.fixture("library-ui-one"); val two=helper.fixture("library-ui-two")
+                    Store.add(one); Store.add(two)
+                    click("Library"); click("Compact"); click("Select downloads")
+                    click("Select ${one.title}"); click("Select ${two.title}")
+                    click("Remove history"); click("Keep entries")
+                    check(Store.downloads.value.count { it.id in setOf(one.id,two.id) }==2)
+                    click("Remove history"); click("Remove history")
+                    check(Store.downloads.value.none { it.id in setOf(one.id,two.id) })
+                    listOf(one,two).forEach { saved -> check(targetContext.contentResolver.openInputStream(Uri.parse(saved.uri))!!.use { it.readBytes().isNotEmpty() }) }
+                    click("Select downloads"); click("Select results"); click("Done")
+                    report("PASS: release Library multi-select, dismiss/confirm removal and selection exit preserve saved files")
+                    result.putString("stream","LIBRARY UI CHECKS PASSED\n"); finish(Activity.RESULT_OK,result); return
                 }
                 if (transferUiOnly) {
                     Store.setTransfers(TransferPreferences())

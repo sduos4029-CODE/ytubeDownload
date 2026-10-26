@@ -1,9 +1,9 @@
-# Flux 1.4 verification
+# Flux 1.5 verification
 
-This release adds bounded parallel transfers and a Wi-Fi-only preference. Automated evidence is produced by the GitHub Actions workflow for the exact branch commit; see the linked run and its verification-report artifact for pass/fail results.
+The root GitHub workflow builds the exact source commit and emits verification logs. Do not treat this source document as proof of a successful run: inspect the associated run conclusion and artifacts.
 
-The workflow checks baseline 4K/audio merging, queue ordering and retries, actual process-restart resume, 2/3-way concurrency, lowering the limit without overfilling slots, simulated Wi-Fi loss and byte-range recovery, persisted preferences, and release Settings controls. It fails if an instrumentation pass marker is absent, even if adb itself exits successfully. Fresh emulator installation also exercises native package extraction with the resolved dependencies.
+Existing generated-media suites cover 4K/audio integrity, queue/retry and actual process-restart recovery, concurrency limits and simulated Wi-Fi loss/resume. New suites cover single/multiple share intent streams and read-only ClipData grants, invalid/missing files, selection limits, selective history removal, retained saved bytes, protected active/pending-save records and removal persistence after force-stop. Release UI checks cover selection, confirmation dismissal/acceptance and selection exit.
 
-Wi-Fi handover is simulated through a debug-only test override, which is rejected in release builds. Release UI runs with a temporary CI signing identity; the distributed app is signed afterward with the existing private identity. CI retains the original unsigned artifact unchanged. No private update key is uploaded.
+The share-intent test validates preparation and URI access within Flux. It does not automate sending files to a third-party app. Native device/platform variation, recipient behavior, real Wi-Fi/cellular handovers and live YouTube remain unverified. A full native-library security audit is pending.
 
-Only generated local media is used. These checks do not establish live YouTube compatibility, all real mobile/Wi-Fi/VPN transitions, every Android version or every device's foreground-service behavior. A full native-library security audit remains outstanding. Resume is source-dependent. Background quotas and Force stop still apply.
+CI builds unsigned and signs only a separate UI-test copy using an ephemeral runner key. The owner update identity remains outside GitHub.
