@@ -1,8 +1,8 @@
 # Flux for Android
 
-Native Kotlin / Jetpack Compose YouTube downloader for Android 8.0+.
+Native Kotlin / Jetpack Compose YouTube and public Instagram single-video downloader for Android 8.0+.
 
-**Delivery status: version 1.9.0 implementation prepared; exact-commit build and runtime verification run in GitHub Actions.** Download, separate-stream merging, audio-only saving, progress states, cancellation, persistent history, and chosen-folder permissions passed the documented checks. Live YouTube search, thumbnails and downloads remain unverified because the environment proxy denied YouTube requests. See `TEST_REPORT.md` for exact coverage and limits. The installable signed APK is delivered separately as `Flux-v1.9.0.apk`.
+**Delivery status: version 2.0.0 implementation prepared; exact-commit build and runtime verification run in GitHub Actions.** Download, separate-stream merging, audio-only saving, progress states, cancellation, persistent history, and chosen-folder permissions passed the documented checks. Live YouTube search, thumbnails and downloads remain unverified because the environment proxy denied YouTube requests. See `TEST_REPORT.md` for exact coverage and limits. The installable signed APK is delivered separately as `Flux-v2.0.0.apk`.
 
 ## Get an APK with GitHub Actions
 
@@ -10,7 +10,7 @@ This repository keeps the app in android/. The root workflow .github/workflows/f
 
 1. Open Actions → Flux Android build and device checks.
 2. Select a successful run for your source commit.
-3. Download and unzip Flux-1.9.0-unsigned.
+3. Download and unzip Flux-2.0.0-unsigned.
 4. Verify app-release-unsigned.apk against its SHA-256 sidecar.
 5. Sign it outside GitHub with your persistent app key using Android Build Tools apksigner. Keep the owner key outside the repository and runner.
 
@@ -33,7 +33,17 @@ python3 tools/test-network-policy.py
 
 Output: `app/build/outputs/apk/release/app-release-unsigned.apk` unless FLUX_SIGNING_STORE and its signing variables are supplied.
 
-## New in 1.9.0
+## New in 2.0.0 — public Instagram video foundation
+
+- Paste or share a direct HTTPS Instagram Reel or single-video post link into Flux. Plain words still search YouTube.
+- Keep the original platform URL through preview, quality selection, queue/history, source copy and Download again. Instagram IDs are never rebuilt as YouTube URLs; source keys are namespaced.
+- Display returned video formats, including source-video options with missing resolution/codec/size marked honestly. Separate audio can be paired when the source returns it; sources that report no audio do not gain invented sound.
+- Photo-only posts, carousels/multi-item posts, Stories, profile galleries, Threads and login-required/private content are not supported in this phase. No login, account-cookie import, private-content access or profile enumeration is added.
+- YouTube/Instagram HTTPS hosts, routes and shared text are validated centrally. Unsupported known Meta links shared into Flux reach a useful error. New searches clear old results.
+- Public Instagram metadata was retrieved with the bundled extractor on the build host without an impersonation backend. One upstream public Reel returned nine formats. No live Instagram media was downloaded for that probe; it does not establish Android-device/service-wide compatibility. Rate limits, region/access checks and platform changes can still prevent a public request.
+- Generated-media Android checks validate models, format/audio planning, source persistence, queue/save integrity and release controls. Physical-device Instagram downloads remain unverified.
+
+## Included from 1.9.0
 
 - Library status menu filters All states / Completed / Failed / Cancelled, combined with title search, media type, favourites and sorting. Status is recorded history state, not a fresh availability scan.
 - Select up to 100 entries and Favourite / Unfavourite completed entries in one action. Non-completed entries are skipped, and changes persist through restart.
@@ -102,7 +112,7 @@ The distributed APK retains the existing private signing identity for in-place u
 
 ## Included behavior
 
-- Search by words (up to five results), inspect YouTube links, or share a YouTube link into Flux.
+- Search YouTube by words (up to five results), inspect supported YouTube/Instagram video links, or share those links into Flux.
 - Display thumbnails, titles, channels, and duration.
 - List every returned video format with its source resolution, frame rate, container, codec, and estimated size. There is no arbitrary resolution cap; options depend on the upload and what YouTube exposes.
 - List source audio with codec, reported bitrate, sample rate, channels and language. Keep extractor quality ranking; prefer non-DRC streams in automatic video pairing. Files remain in their original format, such as M4A or WebM/Opus; MP3 conversion is not implemented.

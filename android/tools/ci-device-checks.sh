@@ -30,6 +30,9 @@ check repeatRestartOnly 'REPEAT RESTART CHECKS PASSED'
 check libraryToolsOnly 'LIBRARY TOOLS CHECKS PASSED'
 adb shell am force-stop com.flux.downloader
 check libraryToolsRestartOnly 'LIBRARY TOOLS RESTART CHECKS PASSED'
+check platformOnly 'PLATFORM CHECKS PASSED'
+adb shell am force-stop com.flux.downloader
+check platformRestartOnly 'PLATFORM RESTART CHECKS PASSED'
 # Use only the runner's temporary debug identity for release UI testing. The
 # unsigned artifact is unchanged; the owner's update key never enters CI.
 "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks "$ANDROID_USER_HOME/debug.keystore" --ks-key-alias androiddebugkey --ks-pass pass:android --key-pass pass:android --out "$RUNNER_TEMP/flux-release-ui.apk" app/build/outputs/apk/release/app-release-unsigned.apk
@@ -40,5 +43,6 @@ check progressUiOnly 'PROGRESS UI CHECKS PASSED'
 check favouritesUiOnly 'FAVOURITES UI CHECKS PASSED'
 check repeatUiOnly 'REPEAT UI CHECKS PASSED'
 check libraryToolsUiOnly 'LIBRARY TOOLS UI CHECKS PASSED'
+check platformUiOnly 'PLATFORM UI CHECKS PASSED'
 adb shell am start -n com.flux.downloader/.MainActivity
 adb logcat -d > test-results/logcat.txt

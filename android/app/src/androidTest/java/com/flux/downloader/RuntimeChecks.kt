@@ -19,6 +19,9 @@ import java.util.concurrent.Executors
 
 /** Real-device integration checks. Media is generated locally; no third-party video is downloaded. */
 class RuntimeChecks : Instrumentation() {
+    private var platformOnly = false
+    private var platformRestartOnly = false
+    private var platformUiOnly = false
     private var libraryToolsOnly = false
     private var libraryToolsRestartOnly = false
     private var libraryToolsUiOnly = false
@@ -44,6 +47,9 @@ class RuntimeChecks : Instrumentation() {
     private var restartOnly = false
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
+        platformOnly = arguments?.getString("platformOnly") == "true"
+        platformRestartOnly = arguments?.getString("platformRestartOnly") == "true"
+        platformUiOnly = arguments?.getString("platformUiOnly") == "true"
         libraryToolsOnly = arguments?.getString("libraryToolsOnly") == "true"
         libraryToolsRestartOnly = arguments?.getString("libraryToolsRestartOnly") == "true"
         libraryToolsUiOnly = arguments?.getString("libraryToolsUiOnly") == "true"
@@ -73,6 +79,11 @@ class RuntimeChecks : Instrumentation() {
     override fun onStart() {
         val result = Bundle()
         try {
+            if(platformOnly || platformRestartOnly) {
+                runBlocking { PlatformChecks(this@RuntimeChecks,::report).run(platformRestartOnly) }
+                result.putString("stream",if(platformRestartOnly) "PLATFORM RESTART CHECKS PASSED\n" else "PLATFORM CHECKS PASSED\n")
+                finish(Activity.RESULT_OK,result);return
+            }
             if(libraryToolsOnly || libraryToolsRestartOnly) {
                 runBlocking { LibraryToolsChecks(this@RuntimeChecks,::report).run(libraryToolsRestartOnly) }
                 result.putString("stream",if(libraryToolsRestartOnly) "LIBRARY TOOLS RESTART CHECKS PASSED\n" else "LIBRARY TOOLS CHECKS PASSED\n")
@@ -139,7 +150,7 @@ class RuntimeChecks : Instrumentation() {
             val activity = startActivitySync(Intent(targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
             check(!activity.isFinishing) { "Activity did not launch" }
             report("PASS: APK installs and MainActivity launches")
-            if (uiOnly || queueUiOnly || transferUiOnly || libraryUiOnly || progressUiOnly || favouritesUiOnly || repeatUiOnly || libraryToolsUiOnly) {
+            if (uiOnly || queueUiOnly || transferUiOnly || libraryUiOnly || progressUiOnly || favouritesUiOnly || repeatUiOnly || libraryToolsUiOnly || platformUiOnly) {
                 // UI scenarios own synthetic job states. Drain WorkManager,
                 // including requests restored after a force-stop, first.
                 Store.setQueuePaused(true)
@@ -171,6 +182,24 @@ class RuntimeChecks : Instrumentation() {
                         Thread.sleep(300)
                     }
                     error("UI control not found: $label")
+                }
+                if(platformUiOnly) {
+                    var model:FluxModel?=null
+                    runOnMainSync {
+                        model=ViewModelProvider(activity)[FluxModel::class.java]
+                        model!!.query=PlatformChecks.POST
+                        model!!.results=listOf(PlatformChecks.video())
+                    }
+                    click("Discover");click("Choose quality");click("Download 1080p")
+                    check(Store.downloads.value.any { it.url==PlatformChecks.POST && it.state=="Paused" && it.selector.startsWith("video+") })
+                    click("Library");click("Compact");click("More actions for Instagram saved fixture");click("File details");click("Copy source link")
+                    check(targetContext.getSystemService(android.content.ClipboardManager::class.java).primaryClip?.getItemAt(0)?.text?.toString()==PlatformChecks.POST)
+                    click("Close details")
+                    runOnMainSync { model!!.query="https://www.instagram.com/creator/";model!!.search() }
+                    runBlocking { withTimeout(10000) { while(model!!.busy)delay(100) } }
+                    check(model!!.error?.contains("profiles")==true && model!!.results.isEmpty())
+                    report("PASS: release Instagram result/quality selection queues the Instagram URL, source copying works, and unsupported profiles clear stale results with an error")
+                    result.putString("stream","PLATFORM UI CHECKS PASSED\n");finish(Activity.RESULT_OK,result);return
                 }
                 if(libraryToolsUiOnly) {
                     val helper=LibraryChecks(this,::report)

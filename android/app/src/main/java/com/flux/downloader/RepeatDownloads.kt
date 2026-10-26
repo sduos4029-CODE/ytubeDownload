@@ -7,6 +7,8 @@ data class RepeatOutcome(val job: Download, val created: Boolean)
 
 object RepeatDownloads {
     fun sourceKey(url: String): String? {
+        val link=MediaLinks.parse(url) ?: return null
+        if(link.platform==MediaPlatform.Instagram)return "instagram:${link.postId}"
         val safe = LibraryDetails.source(url) ?: return null
         val uri = Uri.parse(safe)
         val parts = uri.pathSegments

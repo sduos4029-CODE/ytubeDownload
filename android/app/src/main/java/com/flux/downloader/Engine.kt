@@ -67,24 +67,12 @@ object Engine {
         addOption("--postprocessor-args", "ffmpeg_i:-protocol_whitelist file,pipe,crypto,data")
     }
 
-    /** Search and inspection only accept YouTube links or plain search words. */
-    fun target(input: String): String {
-        val text = input.trim()
-        require(text.isNotEmpty()) { "Paste a YouTube link or enter a search." }
-        if (!text.contains("://") && !text.startsWith("www.") && !text.startsWith("youtube.com/") && !text.startsWith("youtu.be/")) {
-            return "ytsearch5:$text"
-        }
-        val uri = Uri.parse(if (text.contains("://")) text else "https://$text")
-        val host = uri.host?.lowercase().orEmpty()
-        require(uri.scheme == "https" && host in setOf("youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be")) {
-            "Use a valid HTTPS YouTube link or enter search words."
-        }
-        return uri.toString()
-    }
+    /** Plain words search YouTube; supported direct links are validated centrally. */
+    fun target(input: String): String = MediaLinks.target(input)
 
     suspend fun search(context: Context, input: String): List<Video> = withContext(Dispatchers.IO) {
-        initialize(context)
         val target = target(input)
+        initialize(context)
         val request = secureOptions(YoutubeDLRequest(target)).apply {
             addOption("--dump-single-json")
             addOption("--skip-download")
@@ -94,8 +82,9 @@ object Engine {
         }
         val result = YoutubeDL.getInstance().execute(request)
         val json = JSONObject(result.out)
+        MediaLinks.validateInstagramMetadata(json, target)
         val entries = json.optJSONArray("entries")
-        if (entries == null) listOf(Video.from(json)) else buildList {
+        if (entries == null) listOf(Video.from(json, target)) else buildList {
             for (i in 0 until entries.length()) entries.optJSONObject(i)?.let { add(Video.from(it)) }
         }
     }
@@ -106,7 +95,9 @@ object Engine {
             addOption("--dump-single-json"); addOption("--skip-download")
             addOption("--no-playlist"); addOption("--socket-timeout", "25")
         }
-        Video.from(JSONObject(YoutubeDL.getInstance().execute(request).out))
+        val json=JSONObject(YoutubeDL.getInstance().execute(request).out)
+        MediaLinks.validateInstagramMetadata(json,video.url)
+        Video.from(json,video.url)
     }
 }
 
@@ -114,9 +105,9 @@ data class MediaFormat(
     val id: String, val extension: String, val height: Int, val fps: Int,
     val audioBitrate: Int, val size: Long, val video: Boolean, val audio: Boolean,
     val codec: String, val audioCodec: String = "", val sampleRate: Int = 0,
-    val channels: Int = 0, val language: String = "", val note: String = ""
+    val channels: Int = 0, val language: String = "", val note: String = "", val width: Int = 0
 ) {
-    val label: String get() = if (video) "${height}p${if (fps > 30) " · ${fps}fps" else ""}" else
+    val label: String get() = if (video) (if(height>0) "${if(width>0 && height>width) "${width}x$height" else "${height}p"}${if (fps > 30) " · ${fps}fps" else ""}" else "Source video") else
         if (audioBitrate > 0) "$audioBitrate kbps" else "Source audio"
     val isDrc get() = id.contains("drc", true) || note.contains("DRC", true)
     val audioLabel get() = buildList {
@@ -129,31 +120,37 @@ data class MediaFormat(
     }.joinToString(" · ")
     companion object {
         private fun JSONObject.hasCodec(key: String) = optString(key, "none") !in listOf("none", "null", "")
-        fun from(o: JSONObject): MediaFormat = MediaFormat(
+        fun from(o: JSONObject, instagramVideo: Boolean = false): MediaFormat = MediaFormat(
             o.optString("format_id"), o.optString("ext", "mp4"), o.optInt("height"),
             o.optDouble("fps", 0.0).toInt(),
             (o.optDouble("abr", 0.0).takeIf { it > 0 } ?: if (!o.hasCodec("vcodec")) o.optDouble("tbr", 0.0) else 0.0).toInt(),
             o.optLong("filesize", 0).takeIf { it > 0 } ?: o.optLong("filesize_approx", 0),
-            o.hasCodec("vcodec"), o.hasCodec("acodec"), o.optString("vcodec", ""),
+            o.hasCodec("vcodec") || (instagramVideo && o.optString("vcodec") in setOf("","null") && o.optString("ext")=="mp4"), o.hasCodec("acodec"), o.optString("vcodec", ""),
             o.optString("acodec", ""), o.optInt("asr", 0), o.optInt("audio_channels", 0),
-            o.optString("language", "").takeUnless { it == "null" }.orEmpty(), o.optString("format_note", "")
+            o.optString("language", "").takeUnless { it == "null" }.orEmpty(), o.optString("format_note", ""), o.optInt("width",0)
         )
     }
 }
 
 data class Video(val id: String, val title: String, val author: String, val thumbnail: String,
-    val seconds: Long, val formats: List<MediaFormat> = emptyList()) {
-    val url get() = "https://www.youtube.com/watch?v=$id"
+    val seconds: Long, val formats: List<MediaFormat> = emptyList(), val sourceUrl: String = "",
+    val platform: MediaPlatform = MediaPlatform.YouTube) {
+    val url get() = sourceUrl.ifBlank { "https://www.youtube.com/watch?v=$id" }
+    val key get() = "${platform.name}:$id"
     companion object {
-        fun from(o: JSONObject): Video {
+        fun from(o: JSONObject, requestedUrl: String = ""): Video {
             val id = o.getString("id")
             val formats = o.optJSONArray("formats") ?: JSONArray()
-            return Video(id, o.optString("title", "YouTube video"),
-                o.optString("uploader", o.optString("channel", "YouTube")),
+            val link=listOf(requestedUrl,o.optString("webpage_url"),o.optString("original_url"),o.optString("url")).firstNotNullOfOrNull { MediaLinks.parse(it) }
+            val platform=link?.platform ?: MediaPlatform.YouTube
+            require(!o.optString("extractor_key").startsWith("Instagram",true) || platform==MediaPlatform.Instagram) { "The Instagram source link is missing. Load the post again." }
+            fun text(key: String) = o.optString(key).takeUnless { it.isBlank() || it=="null" }
+            return Video(id, text("title") ?: "${platform.label} video",
+                text("uploader") ?: text("channel") ?: text("uploader_id") ?: platform.label,
                 o.optString("thumbnail").takeIf { it.startsWith("https://") }
-                    ?: "https://i.ytimg.com/vi/$id/hqdefault.jpg", o.optDouble("duration", 0.0).toLong(),
-                (0 until formats.length()).mapNotNull { formats.optJSONObject(it)?.let(MediaFormat::from) }
-                    .filter { it.id.isNotBlank() && (it.video || it.audio) && it.extension !in listOf("mhtml", "none") })
+                    ?: if(platform==MediaPlatform.YouTube) "https://i.ytimg.com/vi/$id/hqdefault.jpg" else "", o.optDouble("duration", 0.0).toLong(),
+                (0 until formats.length()).mapNotNull { formats.optJSONObject(it)?.let { format -> MediaFormat.from(format,platform==MediaPlatform.Instagram) } }
+                    .filter { it.id.isNotBlank() && (it.video || it.audio) && it.extension !in listOf("mhtml", "none") },link?.url.orEmpty(),platform)
         }
     }
 }

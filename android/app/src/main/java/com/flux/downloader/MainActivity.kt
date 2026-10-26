@@ -73,7 +73,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); shared = extractShare(intent) }
     private fun extractShare(intent: Intent?): String {
         val text = if (intent?.action == Intent.ACTION_SEND) intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty() else ""
-        return Regex("https://(?:www\\.|m\\.|music\\.)?(?:youtube\\.com|youtu\\.be)/[^\\s]+").find(text)?.value.orEmpty()
+        return MediaLinks.shared(text)
     }
 }
 
@@ -86,7 +86,7 @@ class FluxModel(app: Application) : AndroidViewModel(app) {
     var inspecting by mutableStateOf(false)
     fun search() {
         if (busy || query.isBlank()) return
-        busy = true; error = null
+        busy = true; error = null; results = emptyList(); selected = null
         viewModelScope.launch {
             try {
                 results = Engine.search(getApplication(), query)
@@ -211,7 +211,7 @@ private fun Discover(model: FluxModel) {
                             modifier = Modifier.padding(start = 8.dp), color = Muted)
                     }
                     OutlinedTextField(value = model.query, onValueChange = { model.query = it },
-                        placeholder = { Text("YouTube link or video name", fontSize = 14.sp) },
+                        placeholder = { Text("YouTube search or video link", fontSize = 13.sp) },
                         modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp), singleLine = true,
                         shape = RoundedCornerShape(14.dp), keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search, keyboardType = KeyboardType.Text),
                         keyboardActions = KeyboardActions(onSearch = { model.search() }),
@@ -222,6 +222,8 @@ private fun Discover(model: FluxModel) {
                         else Icon(Icons.Rounded.Search, null, Modifier.size(20.dp))
                         Text(if (model.busy) "Finding your video…" else "Find video", Modifier.padding(start = 10.dp), fontWeight = FontWeight.Bold)
                     }
+                    Text("Words search YouTube. Instagram supports direct public single-video posts/Reels. Photos, multi-item posts, Stories, profiles and Threads are not supported yet.",
+                        color = Muted, fontSize = 11.sp, lineHeight = 16.sp, modifier = Modifier.padding(top = 12.dp))
                 }
             }
         }
@@ -235,7 +237,7 @@ private fun Discover(model: FluxModel) {
         if (model.inspecting) item { LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Lilac) }
         if (model.results.isNotEmpty()) {
             item { SectionTitle("Found for you", "${model.results.size} result${if (model.results.size > 1) "s" else ""}") }
-            items(model.results, key = { it.id }) { video -> VideoCard(video, model.inspecting) { model.inspect(video) } }
+            items(model.results, key = { it.key }) { video -> VideoCard(video, model.inspecting) { model.inspect(video) } }
         } else if (!model.busy) {
             item {
                 Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Brush.linearGradient(listOf(Color(0xFF25213B), Panel))).padding(22.dp)) {
@@ -267,7 +269,7 @@ private fun VideoCard(video: Video, disabled: Boolean, select: () -> Unit) {
             }
             Column(Modifier.padding(16.dp)) {
                 Text(video.title, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 22.sp)
-                Text(video.author, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+                Text("${video.platform.label} · ${video.author}", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
                 FilledTonalButton(onClick = select, enabled = !disabled, modifier = Modifier.fillMaxWidth().padding(top = 12.dp), shape = RoundedCornerShape(12.dp)) {
                     Icon(Icons.Rounded.Tune, null, Modifier.size(17.dp)); Text("Choose quality", Modifier.padding(start = 8.dp))
                 }
@@ -279,13 +281,13 @@ private fun VideoCard(video: Video, disabled: Boolean, select: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FormatSheet(video: Video, onDownload: (MediaFormat, MediaFormat?) -> Unit) {
-    var audio by remember(video.id) { mutableStateOf(false) }
-    var chosen by remember(video.id, audio) { mutableStateOf<MediaFormat?>(null) }
-    val sourceAudios = remember(video.id) { video.formats.filter { it.audio && !it.video }.asReversed().sortedBy { it.isDrc } }
-    var selectedAudio by remember(video.id) { mutableStateOf<MediaFormat?>(null) }
+    var audio by remember(video.key) { mutableStateOf(false) }
+    var chosen by remember(video.key, audio) { mutableStateOf<MediaFormat?>(null) }
+    val sourceAudios = remember(video.key) { video.formats.filter { it.audio && !it.video }.asReversed().sortedBy { it.isDrc } }
+    var selectedAudio by remember(video.key) { mutableStateOf<MediaFormat?>(null) }
     var audioMenu by remember { mutableStateOf(false) }
-    val formats = remember(video.id, audio) {
-        if (audio) sourceAudios else video.formats.filter { it.video && it.height > 0 }
+    val formats = remember(video.key, audio) {
+        if (audio) sourceAudios else video.formats.filter { it.video }
             .sortedWith(compareByDescending<MediaFormat> { it.height }.thenByDescending { it.fps }.thenBy { it.extension })
     }
     val selected = chosen ?: formats.firstOrNull()
@@ -294,7 +296,7 @@ private fun FormatSheet(video: Video, onDownload: (MediaFormat, MediaFormat?) ->
         Text("Make it yours", fontSize = 25.sp, fontWeight = FontWeight.Bold)
         Text(video.title, color = Muted, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp, bottom = 16.dp))
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            SegmentedButton(selected = !audio, onClick = { audio = false }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("Video + audio") }
+            SegmentedButton(selected = !audio, onClick = { audio = false }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text(if(video.formats.any { it.audio }) "Video + audio" else "Video") }
             SegmentedButton(selected = audio, onClick = { audio = true }, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("Audio only") }
         }
         if (!audio && sourceAudios.isNotEmpty()) {
@@ -328,7 +330,7 @@ private fun FormatSheet(video: Video, onDownload: (MediaFormat, MediaFormat?) ->
                         RadioButton(selected = picked, onClick = { chosen = format })
                         Column(Modifier.weight(1f)) {
                             Text(format.label, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                            Text("${format.extension.uppercase()}${if (format.video) " · ${format.codec.substringBefore('.') }" else " · ${format.audioLabel}"} · ${sizeLabel(format.size)}",
+                            Text("${if(format.video && format.height==0) "Format ${format.id} · " else ""}${format.extension.uppercase()}${if (format.video) " · ${format.codec.takeUnless { it in setOf("","null","none") }?.substringBefore('.') ?: "codec not reported"}" else " · ${format.audioLabel}"} · ${if(format.size>0)sizeLabel(format.size) else "size not reported"}",
                                 color = Muted, fontSize = 10.sp)
                         }
                         if (format.video && sourceAudios.isNotEmpty()) Tag("AUTO MERGE", Mint)
@@ -336,7 +338,8 @@ private fun FormatSheet(video: Video, onDownload: (MediaFormat, MediaFormat?) ->
                 }
             }
         }
-        Text(if (!audio && sourceAudios.isNotEmpty())
+        Text(if (!audio && video.formats.none { it.audio }) "No audio stream is reported for these formats. Missing sound cannot be created."
+            else if (!audio && sourceAudios.isNotEmpty())
             "Keeps the chosen video and audio without re-encoding. Existing embedded audio is replaced when needed. Saves as MKV. 4K describes video resolution; audio quality depends on the source."
             else "Keeps the source audio without re-encoding. Higher bitrate across different codecs does not always mean better sound. Quality missing from the source cannot be restored.",
             fontSize = 11.sp, color = Muted, lineHeight = 16.sp, modifier = Modifier.padding(vertical = 14.dp))
