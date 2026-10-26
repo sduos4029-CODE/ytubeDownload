@@ -225,6 +225,17 @@ object Store {
         mutable.value = mutable.value.map { if (it.id == id && it.state == "Complete" && it.uri.isNotBlank()) it.copy(favourite = !it.favourite) else it }
         save(true)
     }
+    @Synchronized fun setFavourites(ids: Set<String>, value: Boolean): Int {
+        require(ids.size <= LibraryActions.MAX_SELECTION) { "Select up to 100 items at a time." }
+        var changed = 0
+        mutable.value = mutable.value.map {
+            if (it.id in ids && it.state == "Complete" && it.uri.isNotBlank() && it.favourite != value) {
+                changed++; it.copy(favourite = value)
+            } else it
+        }
+        if (changed > 0) save(true)
+        return changed
+    }
     @Synchronized fun repeatCompleted(id: String): RepeatOutcome {
         val original = mutable.value.find { it.id == id } ?: error("This history entry is no longer available.")
         val fresh = RepeatDownloads.prepare(original, folder.value)

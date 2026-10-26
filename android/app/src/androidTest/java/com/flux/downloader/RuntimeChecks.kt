@@ -19,6 +19,9 @@ import java.util.concurrent.Executors
 
 /** Real-device integration checks. Media is generated locally; no third-party video is downloaded. */
 class RuntimeChecks : Instrumentation() {
+    private var libraryToolsOnly = false
+    private var libraryToolsRestartOnly = false
+    private var libraryToolsUiOnly = false
     private var repeatOnly = false
     private var repeatRestartOnly = false
     private var repeatUiOnly = false
@@ -41,6 +44,9 @@ class RuntimeChecks : Instrumentation() {
     private var restartOnly = false
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
+        libraryToolsOnly = arguments?.getString("libraryToolsOnly") == "true"
+        libraryToolsRestartOnly = arguments?.getString("libraryToolsRestartOnly") == "true"
+        libraryToolsUiOnly = arguments?.getString("libraryToolsUiOnly") == "true"
         repeatOnly = arguments?.getString("repeatOnly") == "true"
         repeatRestartOnly = arguments?.getString("repeatRestartOnly") == "true"
         repeatUiOnly = arguments?.getString("repeatUiOnly") == "true"
@@ -67,6 +73,11 @@ class RuntimeChecks : Instrumentation() {
     override fun onStart() {
         val result = Bundle()
         try {
+            if(libraryToolsOnly || libraryToolsRestartOnly) {
+                runBlocking { LibraryToolsChecks(this@RuntimeChecks,::report).run(libraryToolsRestartOnly) }
+                result.putString("stream",if(libraryToolsRestartOnly) "LIBRARY TOOLS RESTART CHECKS PASSED\n" else "LIBRARY TOOLS CHECKS PASSED\n")
+                finish(Activity.RESULT_OK,result);return
+            }
             if(repeatOnly || repeatRestartOnly) {
                 runBlocking { RepeatChecks(this@RuntimeChecks,::report).run(repeatRestartOnly) }
                 result.putString("stream",if(repeatRestartOnly) "REPEAT RESTART CHECKS PASSED\n" else "REPEAT CHECKS PASSED\n")
@@ -128,7 +139,7 @@ class RuntimeChecks : Instrumentation() {
             val activity = startActivitySync(Intent(targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
             check(!activity.isFinishing) { "Activity did not launch" }
             report("PASS: APK installs and MainActivity launches")
-            if (uiOnly || queueUiOnly || transferUiOnly || libraryUiOnly || progressUiOnly || favouritesUiOnly || repeatUiOnly) {
+            if (uiOnly || queueUiOnly || transferUiOnly || libraryUiOnly || progressUiOnly || favouritesUiOnly || repeatUiOnly || libraryToolsUiOnly) {
                 // UI scenarios own synthetic job states. Drain WorkManager,
                 // including requests restored after a force-stop, first.
                 Store.setQueuePaused(true)
@@ -160,6 +171,49 @@ class RuntimeChecks : Instrumentation() {
                         Thread.sleep(300)
                     }
                     error("UI control not found: $label")
+                }
+                if(libraryToolsUiOnly) {
+                    val helper=LibraryChecks(this,::report)
+                    val one=helper.fixture("tools-ui-one").copy(title="Batch tools QA one")
+                    val two=helper.fixture("tools-ui-two").copy(title="Batch tools QA two")
+                    val failed=one.copy(id="tools-ui-failed",title="Batch tools QA failed",state="Failed",uri="")
+                    val cancelled=one.copy(id="tools-ui-cancelled",title="Batch tools QA cancelled",state="Cancelled",uri="")
+                    listOf(one,two,failed,cancelled).forEach(Store::add)
+                    val before=targetContext.contentResolver.openInputStream(Uri.parse(one.uri))!!.use { it.readBytes() }
+                    click("Library")
+                    fun editable(node:android.view.accessibility.AccessibilityNodeInfo?):android.view.accessibility.AccessibilityNodeInfo? {
+                        if(node==null)return null
+                        if(node.isEditable && node.isVisibleToUser)return node
+                        for(i in 0 until node.childCount) { val child=editable(node.getChild(i));if(child!=null)return child }
+                        return null
+                    }
+                    val input=editable(uiAutomation.rootInActiveWindow) ?: error("Library search field unavailable")
+                    check(input.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SET_TEXT,Bundle().apply {
+                        putCharSequence(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,"Batch tools QA")
+                    }))
+                    Thread.sleep(700)
+                    runOnMainSync { targetContext.getSystemService(android.view.inputmethod.InputMethodManager::class.java)
+                        .hideSoftInputFromWindow(activity.window.decorView.windowToken,0) }
+                    click("Status: All states");click("Completed");click("Compact")
+                    click("Select downloads");click("Select results")
+                    fun summaryVisible(node:android.view.accessibility.AccessibilityNodeInfo?):Boolean {
+                        if(node==null)return false
+                        if(node.isVisibleToUser && node.text?.toString()?.contains(selectionSummary(listOf(one,two)).label)==true)return true
+                        return (0 until node.childCount).any { summaryVisible(node.getChild(it)) }
+                    }
+                    check(summaryVisible(uiAutomation.rootInActiveWindow)) { "Recorded selection summary not visible" }
+                    click("Favourite")
+                    check(Store.downloads.value.filter { it.id in setOf(one.id,two.id) }.all { it.favourite })
+                    click("Favourites");click("Unfavourite")
+                    check(Store.downloads.value.filter { it.id in setOf(one.id,two.id) }.none { it.favourite })
+                    click("Favourite");click("Done");click("Favourites")
+                    click("Status: Completed");click("Failed")
+                    click("More actions for ${failed.title}");click("File details");click("Close details")
+                    click("Status: Failed");click("Cancelled")
+                    click("More actions for ${cancelled.title}");click("File details");click("Close details")
+                    check(before.contentEquals(targetContext.contentResolver.openInputStream(Uri.parse(one.uri))!!.use { it.readBytes() }))
+                    report("PASS: release search and completed/failed/cancelled filters, filtered selection, bulk favourite/unfavourite and selection retained across filters; file bytes unchanged")
+                    result.putString("stream","LIBRARY TOOLS UI CHECKS PASSED\n");finish(Activity.RESULT_OK,result);return
                 }
                 if(repeatUiOnly) {
                     Store.setQueuePaused(true)

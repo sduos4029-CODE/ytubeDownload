@@ -2,7 +2,7 @@
 
 Native Kotlin / Jetpack Compose YouTube downloader for Android 8.0+.
 
-**Delivery status: version 1.8.0 implementation prepared; exact-commit build and runtime verification run in GitHub Actions.** Download, separate-stream merging, audio-only saving, progress states, cancellation, persistent history, and chosen-folder permissions passed the documented checks. Live YouTube search, thumbnails and downloads remain unverified because the environment proxy denied YouTube requests. See `TEST_REPORT.md` for exact coverage and limits. The installable signed APK is delivered separately as `Flux-v1.8.0.apk`.
+**Delivery status: version 1.9.0 implementation prepared; exact-commit build and runtime verification run in GitHub Actions.** Download, separate-stream merging, audio-only saving, progress states, cancellation, persistent history, and chosen-folder permissions passed the documented checks. Live YouTube search, thumbnails and downloads remain unverified because the environment proxy denied YouTube requests. See `TEST_REPORT.md` for exact coverage and limits. The installable signed APK is delivered separately as `Flux-v1.9.0.apk`.
 
 ## Get an APK with GitHub Actions
 
@@ -10,7 +10,7 @@ This repository keeps the app in android/. The root workflow .github/workflows/f
 
 1. Open Actions → Flux Android build and device checks.
 2. Select a successful run for your source commit.
-3. Download and unzip Flux-1.8.0-unsigned.
+3. Download and unzip Flux-1.9.0-unsigned.
 4. Verify app-release-unsigned.apk against its SHA-256 sidecar.
 5. Sign it outside GitHub with your persistent app key using Android Build Tools apksigner. Keep the owner key outside the repository and runner.
 
@@ -33,7 +33,15 @@ python3 tools/test-network-policy.py
 
 Output: `app/build/outputs/apk/release/app-release-unsigned.apk` unless FLUX_SIGNING_STORE and its signing variables are supplied.
 
-## New in 1.8.0
+## New in 1.9.0
+
+- Library status menu filters All states / Completed / Failed / Cancelled, combined with title search, media type, favourites and sorting. Status is recorded history state, not a fresh availability scan.
+- Select up to 100 entries and Favourite / Unfavourite completed entries in one action. Non-completed entries are skipped, and changes persist through restart.
+- The selection toolbar shows the sum of known recorded completed-file sizes, explicitly counts unknown sizes and avoids overflowing totals. It is not current disk usage or a free-space estimate; files may have changed or been removed.
+- Selection stays across filters, with the selected count and size summary reflecting all selected records. Select results replaces selection with up to 100 current matches.
+- Existing sharing, history removal, per-item favourites/details, Download again and unavailable-file replacement remain.
+
+## Included from 1.8.0
 
 - Completed Library entries have Download again in the file menu, with confirmation before queuing. File details also offer Download replacement when a completed file cannot be opened.
 - A new job gets a fresh ID, clean progress/retry/save state and the current download folder. The original history, favourite mark and saved file remain untouched. A paused queue stays paused.
