@@ -43,6 +43,7 @@ check progressUiOnly 'PROGRESS UI CHECKS PASSED'
 check favouritesUiOnly 'FAVOURITES UI CHECKS PASSED'
 check repeatUiOnly 'REPEAT UI CHECKS PASSED'
 check libraryToolsUiOnly 'LIBRARY TOOLS UI CHECKS PASSED'
+adb shell am force-stop com.flux.downloader
 check platformUiOnly 'PLATFORM UI CHECKS PASSED'
 adb shell am start -n com.flux.downloader/.MainActivity
 adb logcat -d > test-results/logcat.txt

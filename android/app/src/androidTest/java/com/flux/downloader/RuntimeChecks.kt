@@ -190,7 +190,8 @@ class RuntimeChecks : Instrumentation() {
                         model!!.query=PlatformChecks.POST
                         model!!.results=listOf(PlatformChecks.video())
                     }
-                    click("Discover");click("Choose quality");click("Download 1080p")
+                    // MainActivity opens on Discover; do not click an already-selected tab.
+                    click("Choose quality");click("Download 1080p")
                     check(Store.downloads.value.any { it.url==PlatformChecks.POST && it.state=="Paused" && it.selector.startsWith("video+") })
                     click("Library");click("Compact");click("More actions for Instagram saved fixture");click("File details");click("Copy source link")
                     check(targetContext.getSystemService(android.content.ClipboardManager::class.java).primaryClip?.getItemAt(0)?.text?.toString()==PlatformChecks.POST)
