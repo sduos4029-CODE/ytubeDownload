@@ -56,7 +56,6 @@ fun QueuePage(jobs: List<Download>) {
             }
         }
         items(ordered, key = { it.id }) { job ->
-            val resting = job.state in setOf("Paused", "Pausing", "Queued", "Retrying")
             Surface(color = colors.surface, shape = RoundedCornerShape(20.dp)) {
                 Column(Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -78,11 +77,9 @@ fun QueuePage(jobs: List<Download>) {
                             else -> job.state
                         }, color = colors.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.weight(1f))
-                        if (!resting && job.state != "Merging") Text("${job.progress.toInt()}%", color = colors.onSurfaceVariant, fontSize = 11.sp)
+                        if (job.state == "Saving") Text("${job.progress.toInt()}%", color = colors.onSurfaceVariant, fontSize = 11.sp)
                     }
-                    if (job.state == "Merging" || job.state == "Pausing") LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 10.dp), color = colors.primary)
-                    else if (job.state in setOf("Downloading", "Saving") || (resting && job.progress > 0)) LinearProgressIndicator(
-                        progress = { (job.progress / 100).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().padding(top = 10.dp), color = colors.primary)
+                    ProgressPanel(job)
                     Text(job.detail, color = colors.onSurfaceVariant, fontSize = 11.sp, lineHeight = 16.sp, modifier = Modifier.padding(top = 10.dp))
                     if (job.audioDescription.isNotBlank()) Text("Audio: ${job.audioDescription}", color = colors.secondary,
                         fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 7.dp))
