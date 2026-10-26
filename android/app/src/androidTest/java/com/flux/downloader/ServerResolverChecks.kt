@@ -64,6 +64,7 @@ class ServerResolverChecks(private val instrumentation:Instrumentation,private v
                 val types=(0 until media.trackCount).map {media.getTrackFormat(it).getString("mime").orEmpty()}
                 check(types.any {it.startsWith("video/")} && types.any {it.startsWith("audio/")})
             } finally {media.release()}
+            Store.setQueuePaused(true);withTimeout(60000) {Downloads.awaitIdle()}
             check(!server.credentialLeaked && !server.instagramCookieSeen)
             check(java.io.File(app.noBackupFilesDir,"resolver-info").listFiles().orEmpty().isEmpty())
             server.mode="wrong-source";check(runCatching {Engine.search(app,source)}.isFailure)

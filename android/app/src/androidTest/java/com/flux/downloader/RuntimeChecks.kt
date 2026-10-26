@@ -242,7 +242,7 @@ class RuntimeChecks : Instrumentation() {
                     click("Settings");click("Set up server")
                     fun find(node:android.view.accessibility.AccessibilityNodeInfo?,label:String):android.view.accessibility.AccessibilityNodeInfo? {
                         if(node==null)return null
-                        if(node.isVisibleToUser && node.text?.toString()==label)return node
+                        if(node.text?.toString()==label)return node
                         for(i in 0 until node.childCount) {find(node.getChild(i),label)?.let {return it}}
                         return null
                     }
