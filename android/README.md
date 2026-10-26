@@ -1,8 +1,8 @@
 # Flux for Android
 
-Native Kotlin / Jetpack Compose YouTube and public Instagram single-video downloader for Android 8.0+.
+Native Kotlin / Jetpack Compose YouTube and public Instagram post downloader for Android 8.0+.
 
-**Delivery status: version 2.0.0 implementation prepared; exact-commit build and runtime verification run in GitHub Actions.** Download, separate-stream merging, audio-only saving, progress states, cancellation, persistent history, and chosen-folder permissions passed the documented checks. Live YouTube search, thumbnails and downloads remain unverified because the environment proxy denied YouTube requests. See `TEST_REPORT.md` for exact coverage and limits. The installable signed APK is delivered separately as `Flux-v2.0.0.apk`.
+**Delivery status: version 2.1.0 implementation prepared; exact-commit build and runtime verification run in GitHub Actions.** Download, separate-stream merging, audio-only saving, progress states, cancellation, persistent history, and chosen-folder permissions passed the documented checks. Live YouTube search, thumbnails and downloads remain unverified because the environment proxy denied YouTube requests. See `TEST_REPORT.md` for exact coverage and limits. The installable signed APK is delivered separately as `Flux-v2.1.0.apk`.
 
 ## Get an APK with GitHub Actions
 
@@ -10,7 +10,7 @@ This repository keeps the app in android/. The root workflow .github/workflows/f
 
 1. Open Actions → Flux Android build and device checks.
 2. Select a successful run for your source commit.
-3. Download and unzip Flux-2.0.0-unsigned.
+3. Download and unzip Flux-2.1.0-unsigned.
 4. Verify app-release-unsigned.apk against its SHA-256 sidecar.
 5. Sign it outside GitHub with your persistent app key using Android Build Tools apksigner. Keep the owner key outside the repository and runner.
 
@@ -26,6 +26,7 @@ On Linux or macOS, with `curl`, `unzip`, and `sha256sum` installed:
 curl --fail --location --proto '=https' https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp -o /tmp/flux-upstream-ytdlp
 python3 tools/package-extractor.py /tmp/flux-upstream-ytdlp
 python3 tools/test-network-policy.py
+python3 tools/test-instagram.py
 ./gradlew assembleRelease lintRelease
 ```
 
@@ -33,15 +34,20 @@ python3 tools/test-network-policy.py
 
 Output: `app/build/outputs/apk/release/app-release-unsigned.apk` unless FLUX_SIGNING_STORE and its signing variables are supplied.
 
-## New in 2.0.0 — public Instagram video foundation
+## New in 2.1.0 — Instagram photos and carousels
 
-- Paste or share a direct HTTPS Instagram Reel or single-video post link into Flux. Plain words still search YouTube.
-- Keep the original platform URL through preview, quality selection, queue/history, source copy and Download again. Instagram IDs are never rebuilt as YouTube URLs; source keys are namespaced.
-- Display returned video formats, including source-video options with missing resolution/codec/size marked honestly. Separate audio can be paired when the source returns it; sources that report no audio do not gain invented sound.
-- Photo-only posts, carousels/multi-item posts, Stories, profile galleries, Threads and login-required/private content are not supported in this phase. No login, account-cookie import, private-content access or profile enumeration is added.
-- YouTube/Instagram HTTPS hosts, routes and shared text are validated centrally. Unsupported known Meta links shared into Flux reach a useful error. New searches clear old results.
-- Public Instagram metadata was retrieved with the bundled extractor on the build host without an impersonation backend. One upstream public Reel returned nine formats. No live Instagram media was downloaded for that probe; it does not establish Android-device/service-wide compatibility. Rate limits, region/access checks and platform changes can still prevent a public request.
-- Generated-media Android checks validate models, format/audio planning, source persistence, queue/save integrity and release controls. Physical-device Instagram downloads remain unverified.
+- Public Instagram photo/Reel/video/carousel links. Text search remains YouTube. Preview photos with pinch zoom/reset, choose individual carousel items or confirm Download all (up to 20 items).
+- Save the best returned JPEG/PNG/WebP photo without conversion. Source size is not a promise of original camera quality. Videos retain format selection and source audio/merging.
+- Every selected item has an independent queue/progress/save/history record. Photos use Download → Save, including byte/speed/ETA reporting; missing or stale metrics remain unavailable.
+- Item identities are stored with the post URL, not expiring CDN URLs. The bundled extractor selects by exact identity, preserves case, handles reordering and fails when an item disappears. Download-again dedup includes item identity and kind; older history defaults remain readable.
+- Library adds Photos filtering, local saved-photo thumbnails, image sharing/read-only grants and compatible-viewer opening. Incoming image files must decode with matching JPEG/PNG/WebP MIME before saving.
+- Public post extraction retains upstream access checks and HTTPS transport policy. Profiles, Stories, Threads, private/login-required content, cookie import and profile enumeration are unsupported.
+- Generated-media and release UI checks are gating. An additional bounded public Instagram download attempt runs on the Android emulator and records PASSED or UNAVAILABLE separately; service/rate-limit failures never count as live-download success. Physical-device/OEM and broad platform compatibility remain unverified.
+
+## Included from 2.0.0
+
+- Instagram/YouTube source-aware link/share validation, quality metadata, history source copying and platform namespaces.
+- Unknown resolution, codec, size or audio remain honestly unavailable. Searches clear stale results.
 
 ## Included from 1.9.0
 

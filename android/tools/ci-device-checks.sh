@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 mkdir -p test-results
+capture_failure() {
+  local status=$?
+  if [ "$status" -ne 0 ]; then
+    adb exec-out screencap -p > test-results/failure.png || true
+    adb shell uiautomator dump /sdcard/flux-failure.xml >/dev/null 2>&1 || true
+    adb pull /sdcard/flux-failure.xml test-results/failure.xml >/dev/null 2>&1 || true
+    adb logcat -d > test-results/logcat.txt || true
+  fi
+}
+trap capture_failure EXIT
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 check() {
@@ -33,6 +43,9 @@ check libraryToolsRestartOnly 'LIBRARY TOOLS RESTART CHECKS PASSED'
 check platformOnly 'PLATFORM CHECKS PASSED'
 adb shell am force-stop com.flux.downloader
 check platformRestartOnly 'PLATFORM RESTART CHECKS PASSED'
+check galleryOnly 'GALLERY CHECKS PASSED'
+adb shell am force-stop com.flux.downloader
+check galleryRestartOnly 'GALLERY RESTART CHECKS PASSED'
 # Use only the runner's temporary debug identity for release UI testing. The
 # unsigned artifact is unchanged; the owner's update key never enters CI.
 "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks "$ANDROID_USER_HOME/debug.keystore" --ks-key-alias androiddebugkey --ks-pass pass:android --key-pass pass:android --out "$RUNNER_TEMP/flux-release-ui.apk" app/build/outputs/apk/release/app-release-unsigned.apk
@@ -45,5 +58,9 @@ check repeatUiOnly 'REPEAT UI CHECKS PASSED'
 check libraryToolsUiOnly 'LIBRARY TOOLS UI CHECKS PASSED'
 adb shell am force-stop com.flux.downloader
 check platformUiOnly 'PLATFORM UI CHECKS PASSED'
+adb shell am force-stop com.flux.downloader
+check galleryUiOnly 'GALLERY UI CHECKS PASSED'
+adb shell am force-stop com.flux.downloader
+check instagramLiveOnly 'INSTAGRAM LIVE ATTEMPT FINISHED'
 adb shell am start -n com.flux.downloader/.MainActivity
 adb logcat -d > test-results/logcat.txt

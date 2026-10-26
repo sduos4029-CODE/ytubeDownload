@@ -42,7 +42,7 @@ class PlatformChecks(private val instrumentation: Instrumentation, private val r
         check(runCatching { MediaLinks.validateInstagramMetadata(JSONObject("""{"_type":"playlist","entries":[]} """),POST) }.isFailure)
         check(runCatching { MediaLinks.validateInstagramMetadata(JSONObject("""{"formats":[{"ext":"jpg","height":1080}]}"""),POST) }.isFailure)
         check(runCatching { MediaLinks.validateInstagramMetadata(JSONObject("""{"formats":[]} """),POST) }.isFailure)
-        MediaLinks.validateInstagramMetadata(JSONObject("""{"formats":[{"ext":"mp4","height":1080}]}"""),POST)
+        MediaLinks.validateInstagramMetadata(JSONObject("""{"id":"FluxDemo01","formats":[{"format_id":"v","ext":"mp4","height":1080,"vcodec":"avc1"}]}"""),POST)
         check(RepeatDownloads.sourceKey(POST)=="instagram:FluxDemo01")
         check(RepeatDownloads.sourceKey("https://youtu.be/FluxDemo01")!="instagram:FluxDemo01")
         WorkManager.getInstance(app).cancelAllWork().result.get()

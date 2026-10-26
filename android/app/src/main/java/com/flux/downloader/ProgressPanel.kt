@@ -47,7 +47,7 @@ fun ProgressPanel(job: Download) {
         Text(sample?.byteLabel ?: "Waiting for source size", color = colors.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.padding(top = 9.dp))
         Text("${fresh?.speedLabel ?: "Speed unavailable"} · ${fresh?.etaLabel ?: "Time unavailable"}",
             color = colors.secondary, fontSize = 11.sp, modifier = Modifier.padding(top = 5.dp))
-        Text("Estimates apply to this stream; merging and saving take additional time.", color = colors.onSurfaceVariant,
+        Text(if(job.isPhoto) "Estimates apply to downloading; saving takes additional time." else "Estimates apply to this stream; merging and saving take additional time.", color = colors.onSurfaceVariant,
             fontSize = 10.sp, lineHeight = 14.sp, modifier = Modifier.padding(top = 6.dp))
     } else if (job.state == "Merging" || job.state == "Pausing") {
         LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 10.dp))

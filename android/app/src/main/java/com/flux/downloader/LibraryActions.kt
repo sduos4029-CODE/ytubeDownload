@@ -29,6 +29,7 @@ object LibraryActions {
             types.size == 1 && types.single().contains('/') -> types.single()
             types.all { it.startsWith("audio/") } -> "audio/*"
             types.all { it.startsWith("video/") } -> "video/*"
+            types.all { it.startsWith("image/") } -> "image/*"
             else -> "*/*"
         }
         Intent(if (uris.size == 1) Intent.ACTION_SEND else Intent.ACTION_SEND_MULTIPLE).apply {

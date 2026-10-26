@@ -19,6 +19,10 @@ import java.util.concurrent.Executors
 
 /** Real-device integration checks. Media is generated locally; no third-party video is downloaded. */
 class RuntimeChecks : Instrumentation() {
+    private var galleryOnly = false
+    private var galleryRestartOnly = false
+    private var galleryUiOnly = false
+    private var instagramLiveOnly = false
     private var platformOnly = false
     private var platformRestartOnly = false
     private var platformUiOnly = false
@@ -47,6 +51,10 @@ class RuntimeChecks : Instrumentation() {
     private var restartOnly = false
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
+        galleryOnly = arguments?.getString("galleryOnly") == "true"
+        galleryRestartOnly = arguments?.getString("galleryRestartOnly") == "true"
+        galleryUiOnly = arguments?.getString("galleryUiOnly") == "true"
+        instagramLiveOnly = arguments?.getString("instagramLiveOnly") == "true"
         platformOnly = arguments?.getString("platformOnly") == "true"
         platformRestartOnly = arguments?.getString("platformRestartOnly") == "true"
         platformUiOnly = arguments?.getString("platformUiOnly") == "true"
@@ -79,6 +87,16 @@ class RuntimeChecks : Instrumentation() {
     override fun onStart() {
         val result = Bundle()
         try {
+            if(galleryOnly || galleryRestartOnly) {
+                runBlocking { GalleryChecks(this@RuntimeChecks,::report).run(galleryRestartOnly) }
+                result.putString("stream",if(galleryRestartOnly) "GALLERY RESTART CHECKS PASSED\n" else "GALLERY CHECKS PASSED\n")
+                finish(Activity.RESULT_OK,result);return
+            }
+            if(instagramLiveOnly) {
+                runBlocking { InstagramLiveCheck(this@RuntimeChecks,::report).run() }
+                result.putString("stream","INSTAGRAM LIVE ATTEMPT FINISHED\n")
+                finish(Activity.RESULT_OK,result);return
+            }
             if(platformOnly || platformRestartOnly) {
                 runBlocking { PlatformChecks(this@RuntimeChecks,::report).run(platformRestartOnly) }
                 result.putString("stream",if(platformRestartOnly) "PLATFORM RESTART CHECKS PASSED\n" else "PLATFORM CHECKS PASSED\n")
@@ -150,7 +168,7 @@ class RuntimeChecks : Instrumentation() {
             val activity = startActivitySync(Intent(targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
             check(!activity.isFinishing) { "Activity did not launch" }
             report("PASS: APK installs and MainActivity launches")
-            if (uiOnly || queueUiOnly || transferUiOnly || libraryUiOnly || progressUiOnly || favouritesUiOnly || repeatUiOnly || libraryToolsUiOnly || platformUiOnly) {
+            if (uiOnly || queueUiOnly || transferUiOnly || libraryUiOnly || progressUiOnly || favouritesUiOnly || repeatUiOnly || libraryToolsUiOnly || platformUiOnly || galleryUiOnly) {
                 // UI scenarios own synthetic job states. Drain WorkManager,
                 // including requests restored after a force-stop, first.
                 Store.setQueuePaused(true)
@@ -182,6 +200,28 @@ class RuntimeChecks : Instrumentation() {
                         Thread.sleep(300)
                     }
                     error("UI control not found: $label")
+                }
+                if(galleryUiOnly) {
+                    var model:FluxModel?=null
+                    runOnMainSync {
+                        model=ViewModelProvider(activity)[FluxModel::class.java]
+                        model!!.query=GalleryChecks.POST;model!!.results=GalleryChecks.items()
+                    }
+                    click("View photo");click("Reset zoom");click("Download photo")
+                    check(Store.downloads.value.any {it.url==GalleryChecks.POST && it.mediaId=="PhotoOne" && it.isPhoto && it.state=="Paused"})
+                    click("Discover");click("Select item 3");click("Download selected");click("Queue items")
+                    check(Store.downloads.value.any {it.url==GalleryChecks.POST && it.mediaId=="PhotoThree" && it.state=="Paused"})
+                    check(Store.downloads.value.none {it.url==GalleryChecks.POST && it.mediaId=="VideoTwo"})
+                    click("Download all");click("Keep browsing")
+                    check(Store.downloads.value.none {it.url==GalleryChecks.POST && it.mediaId=="VideoTwo"})
+                    click("Download all");click("Queue items")
+                    check(Store.downloads.value.any {it.url==GalleryChecks.POST && it.mediaId=="VideoTwo" && it.state=="Paused"})
+                    check(Store.downloads.value.count {it.url==GalleryChecks.POST && it.state=="Paused"}==5)
+                    click("Library");click("Photos");click("Compact")
+                    click("More actions for Saved gallery photo");click("File details");click("Copy source link");click("Close details")
+                    check(targetContext.getSystemService(android.content.ClipboardManager::class.java).primaryClip?.getItemAt(0)?.text?.toString()==GalleryChecks.POST)
+                    report("PASS: release photo preview/zoom reset/download, individual carousel selection, batch confirmation cancellation, Photos filter and saved photo source copying")
+                    result.putString("stream","GALLERY UI CHECKS PASSED\n");finish(Activity.RESULT_OK,result);return
                 }
                 if(platformUiOnly) {
                     var model:FluxModel?=null
