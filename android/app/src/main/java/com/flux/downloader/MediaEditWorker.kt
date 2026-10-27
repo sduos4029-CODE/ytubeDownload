@@ -74,11 +74,33 @@ class MediaEditWorker(context:Context,params:WorkerParameters):CoroutineWorker(c
             require(input.length()>0){"The source file is empty."}
             control(job.id)
             update("Editing",0f,if(preset.copies)"Copying original streams · progress may be unavailable" else "Encoding ${preset.label} · ${EditQuality.valueOf(job.editQuality).label}")
-            var last=0L
-            NativeMedia.run(applicationContext,MediaEdits.arguments(job,input,output),{control(job.id)}) {line ->
-                if(line.startsWith("out_time=")) {
-                    val time=runCatching {MediaEdits.seconds(line.substringAfter('=').let {value ->if(value.contains('.'))value.substringBefore('.')+"."+value.substringAfter('.').take(3) else value})}.getOrNull()
-                    val now=System.currentTimeMillis()
+            if(job.editSegments.isNotBlank()) {
+                require(preset==EditPreset.Mp4H264 && job.editOperation==EditOperation.Trim.name)
+                val clips=ClipEdits.decode(job.editSegments)
+                val original=MediaEdits.probe(applicationContext,job.copy(state="Complete",uri=job.editSourceUri,duration=0))
+                require(original.video);ClipEdits.validate(clips,original.seconds)
+                var completed=0.0;val total=clips.sumOf{it.seconds}
+                clips.forEachIndexed {index,clip ->
+                    control(job.id);StorageBudget.check(applicationContext,0)
+                    val part=ClipEdits.segment(work,index)
+                    val piece=job.copy(editSegments="",editStart=clip.start,editEnd=clip.end,duration=kotlin.math.ceil(clip.seconds).toLong())
+                    var last=0L
+                    NativeMedia.run(applicationContext,MediaEdits.arguments(piece,input,part),{control(job.id)}) {line ->
+                        val time=processedTime(line);val now=System.currentTimeMillis()
+                        if(time!=null && now-last>500){last=now;update("Editing",((completed+time.coerceIn(0.0,clip.seconds))/total*99).toFloat(),"Clip ${index+1} / ${clips.size} · encoding selected range")}
+                    }
+                    require(part.length()>0){"Clip ${index+1} produced no video."}
+                    MediaVerification.inspect(applicationContext,Uri.fromFile(part),piece)
+                    completed+=clip.seconds
+                }
+                control(job.id);StorageBudget.check(applicationContext,0)
+                update("Merging",0f,"Joining ${clips.size} trimmed clips in list order")
+                val list=File(work,"clips.txt").apply{writeText(ClipEdits.manifest(clips.size))}
+                NativeMedia.run(applicationContext,ClipEdits.joinArguments(list,output),{control(job.id)},{})
+            } else {
+                var last=0L
+                NativeMedia.run(applicationContext,MediaEdits.arguments(job,input,output),{control(job.id)}) {line ->
+                    val time=processedTime(line);val now=System.currentTimeMillis()
                     if(time!=null && now-last>500){last=now
                         val progress=if(job.duration>0)(time/job.duration*100).toFloat().coerceIn(0f,99f) else 0f
                         update("Editing",progress,if(job.duration>0)"Processed ${durationLabel(time.toLong())} / about ${durationLabel(job.duration)}" else "Processing · total duration unavailable")
@@ -106,6 +128,10 @@ class MediaEditWorker(context:Context,params:WorkerParameters):CoroutineWorker(c
                 if(Store.downloads.value.find{it.id==job.id}?.state=="Paused")Store.change(job.id,true){it.copy(detail="Paused · original kept; export restarts when resumed")}
             }
         }
+    }
+    private fun processedTime(line:String):Double? {
+        if(!line.startsWith("out_time="))return null
+        return runCatching {MediaEdits.seconds(line.substringAfter('=').let {value ->if(value.contains('.'))value.substringBefore('.')+"."+value.substringAfter('.').take(3) else value})}.getOrNull()
     }
     private fun settle(id:String) {
         Store.change(id,true){when(it.state){"Cancelled","Complete"->it;"Pausing","Paused"->it.copy(state="Paused",detail="Paused · original kept; export restarts when resumed");else->it.copy(state="Queued",detail="Interrupted · original kept; export restarts")}}

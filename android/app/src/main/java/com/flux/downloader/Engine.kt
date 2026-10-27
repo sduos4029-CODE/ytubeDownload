@@ -191,7 +191,7 @@ data class Download(
     val scheduledAt:Long=0, val expectedBytes:Long=0, val expectsAudio:Boolean=false,
     val subtitleLanguage:String="", val verification:String="", val collection:String="", val tags:String="",
     val editOperation:String="",val editPreset:String="",val editQuality:String="",val editSourceUri:String="",val editSourceFolder:String="",
-    val editStart:Double=0.0,val editEnd:Double=0.0
+    val editStart:Double=0.0,val editEnd:Double=0.0,val editSegments:String=""
 ) {
     val isLocalEdit get()=editOperation.isNotBlank()
     val isPhoto get() = mediaKind == "photo" || mime.startsWith("image/")
@@ -208,7 +208,7 @@ data class Download(
         put("scheduledAt",scheduledAt);put("expectedBytes",expectedBytes);put("expectsAudio",expectsAudio);put("subtitleLanguage",subtitleLanguage)
         put("verification",verification);put("collection",collection);put("tags",tags)
         put("editOperation",editOperation);put("editPreset",editPreset);put("editQuality",editQuality);put("editSourceUri",editSourceUri);put("editSourceFolder",editSourceFolder)
-        put("editStart",editStart);put("editEnd",editEnd)
+        put("editStart",editStart);put("editEnd",editEnd);put("editSegments",editSegments)
     }
     companion object {
         fun from(o: JSONObject) = Download(o.getString("id"), o.getString("url"), o.getString("title"),
@@ -220,7 +220,7 @@ data class Download(
             o.optLong("scheduledAt",0).coerceAtLeast(0),o.optLong("expectedBytes",0).coerceAtLeast(0),o.optBoolean("expectsAudio",false),
             o.optString("subtitleLanguage",""),o.optString("verification",""),o.optString("collection",""),o.optString("tags",""),
             o.optString("editOperation",""),o.optString("editPreset",""),o.optString("editQuality",""),o.optString("editSourceUri",""),o.optString("editSourceFolder",""),
-            o.optDouble("editStart",0.0),o.optDouble("editEnd",0.0))
+            o.optDouble("editStart",0.0),o.optDouble("editEnd",0.0),o.optString("editSegments",""))
     }
 }
 

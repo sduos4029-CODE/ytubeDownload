@@ -16,6 +16,12 @@ class MediaToolsChecks(private val instrumentation:Instrumentation,private val r
     suspend fun run(restart:Boolean=false) {
         Store.init(app)
         if(restart) {
+            val multi=Store.downloads.value.first{it.id=="media-tools-multi-saved"}
+            check(ClipEdits.decode(multi.editSegments)==listOf(TrimClip(3.0,4.0),TrimClip(0.0,1.0),TrimClip(3.0,4.0)))
+            check(MediaEdits.probe(app,multi).let{it.video && it.audio && it.seconds in 2.8..3.6})
+            val pendingMulti=Store.downloads.value.first{it.id=="media-tools-multi-paused"}
+            check(pendingMulti.state=="Paused" && pendingMulti.editSegments==multi.editSegments)
+            Downloads.cancel(app,pendingMulti)
             val saved=Store.downloads.value.first {it.id=="media-tools-saved"}
             check(saved.isLocalEdit && saved.editPreset==EditPreset.Aac.name && saved.state=="Complete")
             check(saved.url.isBlank() && RepeatDownloads.sourceKey(saved.url)==null)
@@ -76,6 +82,20 @@ class MediaToolsChecks(private val instrumentation:Instrumentation,private val r
             if(preset==EditPreset.Mp4H264)check(MediaEdits.probe(app,result).seconds in 0.5..2.0)
             report("PASS: native ${preset.name} export creates a separate readable file with the expected tracks")
         }
+        val ranges=listOf(TrimClip(3.0,4.0),TrimClip(0.0,1.0),TrimClip(3.0,4.0))
+        val joined=ClipEdits.prepare(source,info,ranges,EditQuality.High,"")
+        check(Download.from(joined.json())==joined && ClipEdits.decode(joined.editSegments)==ranges)
+        check(joined.editPreset==EditPreset.Mp4H264.name && joined.duration==3L && joined.expectedBytes==info.bytes)
+        check(ClipEdits.manifest(3)=="file 'segment-000.mp4'\nfile 'segment-001.mp4'\nfile 'segment-002.mp4'\n")
+        for(invalid in listOf(emptyList(),listOf(TrimClip(0.0,1.0)),listOf(TrimClip(0.0,0.01),TrimClip(1.0,2.0)),listOf(TrimClip(0.0,info.seconds+1),TrimClip(1.0,2.0)),List(21){TrimClip(0.0,1.0)}))check(runCatching{ClipEdits.validate(invalid,info.seconds)}.isFailure)
+        MediaEdits.enqueue(app,joined)
+        val merged=await(joined.id);val mergedInfo=MediaEdits.probe(app,merged)
+        check(mergedInfo.video && mergedInfo.audio && mergedInfo.seconds in 2.8..3.6)
+        check(merged.uri!=source.uri && merged.mime=="video/mp4" && merged.verification.contains("Video + audio"))
+        Store.add(merged.copy(id="media-tools-multi-saved"))
+        val pendingMulti=joined.copy(id="media-tools-multi-paused",state="Paused")
+        Store.add(pendingMulti)
+        report("PASS: multiple non-contiguous and repeated ranges render through real FFmpeg and merge into one verified MP4 with audio, expected combined duration, persisted order and unchanged source")
         check(hash(uri)==before)
         val command=MediaEdits.arguments(trim,File("/safe/input.media"),File("/safe/output.mkv"))
         check(command[command.indexOf("-protocol_whitelist")+1]=="file,pipe" && !command.contains("http") && command.contains("-format_whitelist"))
