@@ -289,6 +289,15 @@ class RuntimeChecks : Instrumentation() {
                         Thread.sleep(200);endHandle=trimEnd(uiAutomation.rootInActiveWindow)
                     }
                     report("Trim slider inspection: "+previewRanges.joinToString("; "))
+                    if(endHandle==null) {
+                        val labels=StringBuilder()
+                        fun describe(node:android.view.accessibility.AccessibilityNodeInfo?) {
+                            if(node==null || labels.length>4000)return
+                            labels.append("[${node.text}|${node.contentDescription}|${node.className}|scroll=${node.isScrollable}]")
+                            for(i in 0 until node.childCount)describe(node.getChild(i))
+                        }
+                        describe(uiAutomation.rootInActiveWindow);report("Trim dialog inspection: $labels")
+                    }
                     check(endHandle!=null){"Trim end slider was unavailable; observed ranges: $previewRanges"}
                     check(endHandle!!.performAction(android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS.id,Bundle().apply {
                         putFloat(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_PROGRESS_VALUE,2f)
