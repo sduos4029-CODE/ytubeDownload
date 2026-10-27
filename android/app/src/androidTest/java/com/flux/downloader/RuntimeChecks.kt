@@ -269,25 +269,32 @@ class RuntimeChecks : Instrumentation() {
                     Store.setLibrary(LibraryPreferences(LibraryLayout.List,LibrarySize.Small,LibrarySort.Title))
                     click("Library");click("More actions for Flux media tools source");click("Media tools")
                     val previewRanges=mutableSetOf<String>()
-                    fun trimEnd(node:android.view.accessibility.AccessibilityNodeInfo?):android.view.accessibility.AccessibilityNodeInfo? {
+                    fun trimEnd(node:android.view.accessibility.AccessibilityNodeInfo?,insideTrim:Boolean=false):android.view.accessibility.AccessibilityNodeInfo? {
                         if(node==null)return null
                         node.rangeInfo?.let {previewRanges.add("${node.className}: ${it.min}..${it.max}, value=${it.current}, visible=${node.isVisibleToUser}, actions=${node.actionList.map{action->action.id}}")}
-                        if(node.rangeInfo?.current?.let{it>2f}==true && node.actionList.any{it.id==android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS.id})return node
-                        for(i in 0 until node.childCount){val found=trimEnd(node.getChild(i));if(found!=null)return found}
+                        val scoped=insideTrim || node.contentDescription?.toString()=="Trim handles"
+                        var result=if(scoped && node.rangeInfo?.current?.let{it>0f}==true && node.actionList.any{it.id==android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS.id})node else null
+                        for(i in 0 until node.childCount){val found=trimEnd(node.getChild(i),scoped);if(found!=null)result=found}
+                        return result
+                    }
+                    fun locateEnd():android.view.accessibility.AccessibilityNodeInfo? {
+                        var forward=true
+                        val deadline=System.currentTimeMillis()+15000
+                        while(System.currentTimeMillis()<deadline) {
+                            trimEnd(uiAutomation.rootInActiveWindow)?.let{return it}
+                            fun area(node:android.view.accessibility.AccessibilityNodeInfo?):android.view.accessibility.AccessibilityNodeInfo? {
+                                if(node==null)return null
+                                if(node.isScrollable && node.rangeInfo==null)return node
+                                for(i in 0 until node.childCount){val found=area(node.getChild(i));if(found!=null)return found}
+                                return null
+                            }
+                            val action=if(forward)android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD else android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+                            if(area(uiAutomation.rootInActiveWindow)?.performAction(action)!=true)forward=!forward
+                            Thread.sleep(200)
+                        }
                         return null
                     }
-                    var endHandle=trimEnd(uiAutomation.rootInActiveWindow)
-                    val handleDeadline=System.currentTimeMillis()+15000
-                    while(endHandle==null && System.currentTimeMillis()<handleDeadline) {
-                        fun area(node:android.view.accessibility.AccessibilityNodeInfo?):android.view.accessibility.AccessibilityNodeInfo? {
-                            if(node==null)return null
-                            if(node.isScrollable && node.rangeInfo==null)return node
-                            for(i in 0 until node.childCount){val found=area(node.getChild(i));if(found!=null)return found}
-                            return null
-                        }
-                        area(uiAutomation.rootInActiveWindow)?.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
-                        Thread.sleep(200);endHandle=trimEnd(uiAutomation.rootInActiveWindow)
-                    }
+                    val endHandle=locateEnd()
                     report("Trim slider inspection: "+previewRanges.joinToString("; "))
                     if(endHandle==null) {
                         val labels=StringBuilder()
@@ -300,7 +307,7 @@ class RuntimeChecks : Instrumentation() {
                     }
                     check(endHandle!=null){"Trim end slider was unavailable; observed ranges: $previewRanges"}
                     check(endHandle!!.performAction(android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS.id,Bundle().apply {
-                        putFloat(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_PROGRESS_VALUE,2f)
+                        putFloat(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_PROGRESS_VALUE,5f)
                     })){"Trim end slider did not accept a new selection"}
                     Thread.sleep(300)
                     val editorBounds=android.graphics.Rect()
@@ -316,8 +323,13 @@ class RuntimeChecks : Instrumentation() {
                     click("Pause preview")
                     runOnMainSync {check(preview?.isPlaying==false){"Preview did not pause"}}
                     click("Play selected clip")
-                    Thread.sleep(2700)
-                    runOnMainSync {check(preview?.isPlaying==false && preview!!.currentPosition<=2400){"Preview did not stop at the selected end"}}
+                    Thread.sleep(5700)
+                    runOnMainSync {check(preview?.isPlaying==false && preview!!.currentPosition<=5400){"Preview did not stop at the selected end"}}
+                    val clipEnd=locateEnd() ?: error("Trim endpoint unavailable after playback")
+                    check(clipEnd.performAction(android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS.id,Bundle().apply {
+                        putFloat(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_PROGRESS_VALUE,2f)
+                    }))
+                    Thread.sleep(300)
                     fun pointer(node:android.view.accessibility.AccessibilityNodeInfo?):android.view.accessibility.AccessibilityNodeInfo? {
                         if(node==null)return null
                         if(node.contentDescription?.toString()=="Playback pointer" && node.rangeInfo!=null)return node
@@ -348,17 +360,38 @@ class RuntimeChecks : Instrumentation() {
                     if(screenshot!=null) {
                         java.io.File(targetContext.getExternalFilesDir(null),"media-tools-ui.png").outputStream().use {screenshot.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)};screenshot.recycle()
                     }
-                    click("Add clip");click("New clip")
-                    click("Add clip")
+                    click("Add clip");click("Add clip")
+                    fun editLabel(node:android.view.accessibility.AccessibilityNodeInfo?):String? {
+                        if(node==null)return null
+                        val text=node.text?.toString()
+                        if(text?.startsWith("Clip 1 · 0.000 → ")==true)return text
+                        for(i in 0 until node.childCount){val found=editLabel(node.getChild(i));if(found!=null)return found}
+                        return null
+                    }
+                    click("Edit clip 1")
+                    val savedLabel=editLabel(uiAutomation.rootInActiveWindow) ?: error("Saved clip range unavailable")
+                    val savedBoundary=savedLabel.substringAfter(" → ").toDouble()
+                    val editCursor=pointer(uiAutomation.rootInActiveWindow) ?: error("Edit pointer unavailable")
+                    check(editCursor.performAction(android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS.id,Bundle().apply {
+                        putFloat(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_PROGRESS_VALUE,1f)
+                    }))
+                    Thread.sleep(700);click("Set end here");click("Cancel clip edit")
+                    click("Remove clip 1");click("Undo removal")
+                    click("Edit clip 1")
+                    val restoredLabel=editLabel(uiAutomation.rootInActiveWindow)
+                    check(restoredLabel==savedLabel){"Cancel/Undo changed the saved clip: $savedLabel -> $restoredLabel"}
+                    var savedPointer=0.0
+                    runOnMainSync{savedPointer=preview!!.currentPosition/1000.0}
+                    click("Set end here");click("Save clip")
                     val before=Store.downloads.value.map{it.id}.toSet()
                     click("Review export");click("Create new file")
                     val queued=Store.downloads.value.single {it.id !in before}
-                    check(queued.isLocalEdit && queued.state=="Paused" && queued.editOperation==EditOperation.Trim.name && queued.editEnd==2.0 && queued.editSourceUri.startsWith("content://"))
+                    check(queued.isLocalEdit && queued.state=="Paused" && queued.editOperation==EditOperation.Trim.name && kotlin.math.abs(queued.editEnd-savedPointer)<0.002 && queued.editSourceUri.startsWith("content://"))
                     val selectedClips=ClipEdits.decode(queued.editSegments)
-                    check(selectedClips.size==2 && selectedClips[0]==TrimClip(0.0,2.0) && selectedClips[1].start==0.0 && selectedClips[1].end in 6.0..6.1)
-                    check(queued.duration==9L && queued.editPreset==EditPreset.Mp4H264.name)
+                    check(selectedClips.size==2 && selectedClips[0].start==0.0 && selectedClips[0].end in 0.9..1.1 && selectedClips[1].start==savedBoundary && selectedClips[1].end in 6.0..6.1)
+                    check(queued.duration==kotlin.math.ceil(selectedClips.sumOf{it.seconds}).toLong() && queued.editPreset==EditPreset.Mp4H264.name)
                     Downloads.cancel(targetContext,queued)
-                    report("PASS: full-window editor adds multiple trim selections and queues one combined MP4 in clip-list order")
+                    report("PASS: full-window editor adds multiple trim selections and queues one combined MP4 in clip-list order; automatic next range, cancel edit and undo removal preserve saved clips")
                     report("PASS: release Library media-tools dialog, trim/output controls and explicit new-file confirmation queue a local job without changing the source")
                     result.putString("stream","MEDIA TOOLS UI CHECKS PASSED\n");finish(Activity.RESULT_OK,result);return
                 }

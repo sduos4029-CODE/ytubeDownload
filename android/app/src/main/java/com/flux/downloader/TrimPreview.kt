@@ -27,8 +27,15 @@ internal fun trimBounds(start:String,end:String,duration:Double):Pair<Long,Long>
 
 internal fun trimTime(seconds:Double)=String.format(Locale.US,"%.3f",seconds)
 
+@Stable
+internal class TrimPlayback {
+    var playing by mutableStateOf(false)
+    var canPlay by mutableStateOf(false)
+    var toggle:()->Unit={}
+}
+
 @Composable
-internal fun TrimPreview(source:Download,info:EditSource,start:String,end:String,active:Boolean,showTrim:Boolean=true,onRange:(String,String)->Unit) {
+internal fun TrimPreview(source:Download,info:EditSource,start:String,end:String,active:Boolean,showTrim:Boolean=true,controls:TrimPlayback?=null,onRange:(String,String)->Unit) {
     val context=LocalContext.current
     val lifecycle=LocalLifecycleOwner.current.lifecycle
     val bounds=trimBounds(start,end,info.seconds)
@@ -42,6 +49,18 @@ internal fun TrimPreview(source:Download,info:EditSource,start:String,end:String
     var error by remember(source.uri){mutableStateOf("")}
     var position by remember(source.uri){mutableStateOf(0L)}
     fun pause(){seeking=false;resumeAfterSeek=false;playing=false;runCatching{if(view.isPlaying)view.pause()}}
+    fun togglePreview() {
+        if(playing)pause() else {
+            val range=bounds?:return
+            seeking=true;resumeAfterSeek=true
+            runCatching{player?.seekTo(range.first,MediaPlayer.SEEK_CLOSEST)}.onFailure{pause();error="Preview could not seek to this time. Try another range."}
+        }
+    }
+    SideEffect {
+        controls?.playing=playing
+        controls?.canPlay=active && ready && bounds!=null && !seeking
+        controls?.toggle=::togglePreview
+    }
     DisposableEffect(view,lifecycle) {
         val observer=LifecycleEventObserver {_,event->if(event==Lifecycle.Event.ON_PAUSE || event==Lifecycle.Event.ON_STOP)pause()}
         lifecycle.addObserver(observer)
@@ -59,11 +78,12 @@ internal fun TrimPreview(source:Download,info:EditSource,start:String,end:String
         try{view.setVideoURI(Uri.parse(source.uri))}catch(_:Exception){error="Preview cannot open this saved file. Check its folder access."}
         onDispose {
             lifecycle.removeObserver(observer);pause()
+            controls?.playing=false;controls?.canPlay=false;controls?.toggle={}
             view.setOnPreparedListener(null);view.setOnCompletionListener(null);view.setOnErrorListener(null)
             player?.setOnSeekCompleteListener(null);view.stopPlayback();player=null
         }
     }
-    LaunchedEffect(start,end,active,ready) {
+    LaunchedEffect(start,end,active,ready,player) {
         pause()
         if(ready && active && bounds!=null) {
             // Keep the displayed frame and pointer together when boundaries change.
@@ -90,21 +110,15 @@ internal fun TrimPreview(source:Download,info:EditSource,start:String,end:String
                 runCatching{player?.seekTo(position,MediaPlayer.SEEK_CLOSEST)}.onFailure{pause();error="Unable to seek in this format."}
             })
     }
-    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(enabled=active && ready && bounds!=null && !seeking,onClick={
-            if(playing)pause() else {
-                val range=bounds?:return@OutlinedButton
-                seeking=true;resumeAfterSeek=true
-                runCatching{player!!.seekTo(range.first,MediaPlayer.SEEK_CLOSEST)}.onFailure{pause();error="Preview could not seek to this time. Try another range."}
-            }
-        }){Text(if(playing)"Pause preview" else "Play selected clip")}
+    if(controls==null) {
+        OutlinedButton(enabled=active && ready && bounds!=null && !seeking,onClick=::togglePreview){Text(if(playing)"Pause preview" else "Play selected clip")}
     }
     if(showTrim && info.seconds.isFinite() && info.seconds>0) {
         Text("Trim start and end",style=MaterialTheme.typography.titleSmall)
         val total=info.seconds.toFloat()
         val from=(runCatching{MediaEdits.seconds(start).toFloat()}.getOrDefault(0f)).coerceIn(0f,total)
         val until=(runCatching{MediaEdits.seconds(end).toFloat()}.getOrDefault(total)).coerceIn(from,total)
-        RangeSlider(enabled=active,value=from..until,valueRange=0f..total,onValueChange={range ->
+        RangeSlider(modifier=Modifier.semantics{contentDescription="Trim handles"},enabled=active,value=from..until,valueRange=0f..total,onValueChange={range ->
             pause();onRange(trimTime(range.start.toDouble()),trimTime(kotlin.math.floor(range.endInclusive.toDouble().coerceAtMost(info.seconds)*1000)/1000))
         })
         Text("Drag both trim handles. Use the playback pointer above to inspect a frame.",style=MaterialTheme.typography.bodySmall)
