@@ -268,6 +268,19 @@ class RuntimeChecks : Instrumentation() {
                 if(mediaToolsUiOnly) {
                     Store.setLibrary(LibraryPreferences(LibraryLayout.List,LibrarySize.Small,LibrarySort.Title))
                     click("Library");click("More actions for Flux media tools source");click("Media tools")
+                    click("Play selected clip")
+                    var preview:android.widget.VideoView?=null
+                    runOnMainSync {
+                        preview=android.view.inspector.WindowInspector.getGlobalWindowViews()
+                            .firstNotNullOfOrNull {it.findViewWithTag<android.widget.VideoView>("flux-trim-preview")}
+                        check(preview?.isPlaying==true && preview!!.currentPosition>0){"Selected preview did not play"}
+                    }
+                    click("Pause preview")
+                    runOnMainSync {check(preview?.isPlaying==false){"Preview did not pause"}}
+                    click("Play selected clip")
+                    Thread.sleep(7000)
+                    runOnMainSync {check(preview?.isPlaying==false){"Preview did not stop at the end"}}
+                    report("PASS: release trim preview decodes the saved video, plays and pauses on request, and stops at the selection end")
                     val screenshot=uiAutomation.takeScreenshot()
                     if(screenshot!=null) {
                         java.io.File(targetContext.getExternalFilesDir(null),"media-tools-ui.png").outputStream().use {screenshot.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)};screenshot.recycle()
