@@ -19,6 +19,7 @@ import java.util.concurrent.Executors
 
 /** Real-device integration checks. Media is generated locally; no third-party video is downloaded. */
 class RuntimeChecks : Instrumentation() {
+    private var serverDiagnosticsOnly = false
     private var serverUiOnly = false
     private var serverOnly = false
     private var sessionOnly = false
@@ -58,6 +59,7 @@ class RuntimeChecks : Instrumentation() {
     private var restartOnly = false
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
+        serverDiagnosticsOnly = arguments?.getString("serverDiagnosticsOnly") == "true"
         serverUiOnly = arguments?.getString("serverUiOnly") == "true"
         serverOnly = arguments?.getString("serverOnly") == "true"
         sessionOnly = arguments?.getString("sessionOnly") == "true"
@@ -101,6 +103,11 @@ class RuntimeChecks : Instrumentation() {
     override fun onStart() {
         val result = Bundle()
         try {
+            if(serverDiagnosticsOnly) {
+                runBlocking {ServerDiagnosticsChecks(this@RuntimeChecks,::report).run()}
+                result.putString("stream","SERVER DIAGNOSTICS CHECKS PASSED\n")
+                finish(Activity.RESULT_OK,result);return
+            }
             if(serverOnly) {
                 runBlocking {ServerResolverChecks(this@RuntimeChecks,::report).run()}
                 result.putString("stream","SERVER RESOLVER CHECKS PASSED\n")
@@ -239,7 +246,9 @@ class RuntimeChecks : Instrumentation() {
                 if(serverUiOnly) {
                     check(!ServerResolver.enabled(targetContext))
                     check(runCatching {ServerResolver.validateOrigin("http://127.0.0.1:8080")}.isFailure)
-                    click("Settings");click("Set up server")
+                    click("Settings");click("Set up server");click("Copy connection status")
+                    val copied=targetContext.getSystemService(android.content.ClipboardManager::class.java).primaryClip?.getItemAt(0)?.coerceToText(targetContext)?.toString().orEmpty()
+                    check(copied.contains("Server saved: false") && copied.contains("Flux ${BuildConfig.VERSION_NAME}") && !copied.contains("https://"))
                     fun find(node:android.view.accessibility.AccessibilityNodeInfo?,label:String):android.view.accessibility.AccessibilityNodeInfo? {
                         if(node==null)return null
                         if(node.text?.toString()==label)return node
@@ -266,7 +275,7 @@ class RuntimeChecks : Instrumentation() {
                     var parent:android.view.accessibility.AccessibilityNodeInfo?=button
                     while(parent!=null && !parent.isClickable)parent=parent.parent
                     check(parent!=null && !parent.isEnabled)
-                    report("PASS: release server setup is reachable, empty credentials cannot connect and HTTP loopback is rejected")
+                    report("PASS: release setup/copy-status controls are reachable, copied diagnostics exclude links, empty credentials cannot connect and HTTP loopback is rejected")
                     result.putString("stream","SERVER UI CHECKS PASSED\n");finish(Activity.RESULT_OK,result);return
                 }
                 if(sessionUiOnly) {

@@ -67,6 +67,20 @@ class ServerResolverChecks(private val instrumentation:Instrumentation,private v
             Store.setQueuePaused(true);withTimeout(60000) {Downloads.awaitIdle()}
             check(!server.credentialLeaked && !server.instagramCookieSeen)
             check(java.io.File(app.noBackupFilesDir,"resolver-info").listFiles().orEmpty().isEmpty())
+            server.mode="sleep"
+            val waiting=job.copy(id=java.util.UUID.randomUUID().toString(),state="Queued",progress=0f,uri="",mime="")
+            Store.add(waiting);Store.setQueuePaused(false)
+            WorkManager.getInstance(app).enqueue(OneTimeWorkRequestBuilder<DownloadWorker>().build())
+            withTimeout(15000) {while(ServerResolver.status.value.phase!="Waking")delay(20)}
+            Downloads.pause(app,Store.downloads.value.first {it.id==waiting.id})
+            withTimeout(5000) {
+                while(Store.downloads.value.first {it.id==waiting.id}.state!="Paused")delay(20)
+                Downloads.awaitIdle()
+            }
+            val requests=server.health.get();delay(1200);check(server.health.get()==requests)
+            check(!Store.downloads.value.first {it.id==waiting.id}.detail.contains("Waiting for Flux"))
+            Downloads.cancel(app,Store.downloads.value.first {it.id==waiting.id})
+            Store.setQueuePaused(true)
             server.mode="wrong-source";check(runCatching {Engine.search(app,source)}.isFailure)
             server.mode="unsafe-url";check(runCatching {Engine.search(app,source)}.isFailure)
             server.mode="denied";check(runCatching {Engine.search(app,source)}.exceptionOrNull()?.message?.contains("Flux server")==true)
@@ -77,7 +91,7 @@ class ServerResolverChecks(private val instrumentation:Instrumentation,private v
             Store.setQueuePaused(true);withTimeout(60000) {Downloads.awaitIdle()}
         }
         Store.setQueuePaused(previousPause)
-        report("PASS: encrypted backend key, HTTPS-origin validation, YouTube credential exclusion, source binding, server metadata refresh, selected-item lease protection, actual separate video/audio download and merge/save, token/cookie exclusion from CDN and history, redirect/unsafe URL/rejected source handling and cleanup")
+        report("PASS: encrypted backend key, HTTPS-origin validation, YouTube credential exclusion, source binding, server metadata refresh, selected-item lease protection, actual separate video/audio download and merge/save, token/cookie exclusion from CDN and history, pause interrupts sleeping-host requests, redirect/unsafe URL/rejected source handling and cleanup")
     }
     private inner class Fixture:AutoCloseable {
         private val socket=ServerSocket(0,20,java.net.InetAddress.getByName("127.0.0.1"))
@@ -87,6 +101,7 @@ class ServerResolverChecks(private val instrumentation:Instrumentation,private v
         @Volatile var credentialLeaked=false
         @Volatile var instagramCookieSeen=false
         val resolves=AtomicInteger(0)
+        val health=AtomicInteger(0)
         val origin="http://127.0.0.1:${socket.localPort}"
         init {pool.execute {
             while(running)try {val client=socket.accept();pool.execute {runCatching {client.use {connection ->
@@ -102,6 +117,11 @@ class ServerResolverChecks(private val instrumentation:Instrumentation,private v
                 var status="200 OK";var type="application/json";var extra=""
                 val data=when {
                     path.startsWith("/v1/") && headers["authorization"]!="Bearer $token" -> {status="401 Unauthorized";"{}".toByteArray()}
+                    path=="/healthz" -> {
+                        health.incrementAndGet()
+                        if(mode=="sleep") {status="503 Service Unavailable";"{}".toByteArray()}
+                        else """{"service":"flux-resolver","protocol":1,"status":"running"}""".toByteArray()
+                    }
                     path=="/v1/status" -> """{"service":"flux-resolver","protocol":1,"authentication":"no-instagram-login"}""".toByteArray()
                     path=="/v1/resolve" -> {
                         resolves.incrementAndGet();check(JSONObject(String(body)).getString("url")==source)
