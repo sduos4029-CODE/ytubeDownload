@@ -90,7 +90,7 @@ class MediaToolsChecks(private val instrumentation:Instrumentation,private val r
         try {
             withTimeout(15000){while(!started.get())delay(20)}
             withTimeout(5000){task.cancelAndJoin()}
-            report("PASS: cancelling an active native export stops and joins FFmpeg and its reader before returning")
+            report("PASS: cancelling an active native export stops and joins FFmpeg and closes its output stream before returning")
         }finally{task.cancelAndJoin();input.delete()}
     }
     private suspend fun await(id:String):Download=withTimeout(90000) {

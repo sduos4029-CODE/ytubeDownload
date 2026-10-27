@@ -131,6 +131,7 @@ class MediaEditWorker(context:Context,params:WorkerParameters):CoroutineWorker(c
                 FileProvider.getUriForFile(applicationContext,"${applicationContext.packageName}.files",File(folder,name))
             }
         }
+        require(target!=Uri.parse(job.editSourceUri)){"The destination provider reused the source file. Export was not written."}
         Store.change(job.id,true){it.copy(pendingUri=target.toString())}
         file.inputStream().use {input->applicationContext.contentResolver.openOutputStream(target,"w")?.use {output->
             val buffer=ByteArray(256*1024);var bytes=0L;var last=0L

@@ -119,17 +119,26 @@ object NativeMedia {
             val packages=File(context.noBackupFilesDir,"youtubedl-android/packages")
             builder.environment()["LD_LIBRARY_PATH"]="${File(packages,"ffmpeg/usr/lib")}:${File(packages,"python/usr/lib")}:${context.applicationInfo.nativeLibraryDir}"
             val process=builder.start()
-            val reader=async(Dispatchers.IO) {process.inputStream.bufferedReader().use {input ->while(true){val text=input.readLine()?:break;line(text.take(4096))}}}
+            val input=process.inputStream
+            val buffer=ByteArray(8192);val pending=StringBuilder()
+            fun emit(){line(pending.toString().trimEnd('\r'));pending.setLength(0)}
             try {
-                while(process.isAlive || !reader.isCompleted){control();delay(100)}
-                reader.await();control()
+                while(true) {
+                    control();currentCoroutineContext().ensureActive()
+                    val available=try{input.available()}catch(error:java.io.IOException){currentCoroutineContext().ensureActive();if(!process.isAlive)break else throw error}
+                    if(available>0) {
+                        val count=input.read(buffer,0,minOf(available,buffer.size));if(count<0)break
+                        for(i in 0 until count){val char=(buffer[i].toInt() and 255).toChar();if(char=='\n')emit() else if(pending.length<4096)pending.append(char)}
+                    }else if(!process.isAlive)break else delay(50)
+                }
+                if(pending.isNotEmpty())emit()
+                control()
                 check(process.waitFor()==0){"The media engine could not create this output. Try MKV or a different format."}
             } finally {
                 withContext(NonCancellable) {
                     if(process.isAlive)process.destroyForcibly()
                     process.waitFor(5,java.util.concurrent.TimeUnit.SECONDS)
-                    runCatching {process.inputStream.close()}
-                    reader.cancelAndJoin()
+                    runCatching {input.close()}
                 }
             }
         }
