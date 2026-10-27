@@ -144,7 +144,17 @@ private class DownloadTask(
                     detail = if (work.listFiles().orEmpty().isNotEmpty()) "Checking saved data · resuming where supported" else "Connecting to ${MediaLinks.parse(job.url)?.platform?.label ?: "source"}") else it
             }
             checkControl()
-            serverInfo=ServerResolver.downloadInfo(applicationContext,job.url,job.mediaId)
+            if(MediaLinks.isInstagram(job.url))supervisorScope {
+                val resolving=async {
+                    serverInfo=ServerResolver.downloadInfo(applicationContext,job.url,job.mediaId) {
+                        Store.change(jobId) {if(it.state=="Downloading")it.copy(detail="Waiting for Flux server · stream estimates unavailable") else it}
+                    }
+                }
+                try {
+                    while(!resolving.isCompleted) {checkControl();delay(100)}
+                    resolving.await()
+                }finally {withContext(NonCancellable) {resolving.cancelAndJoin()}}
+            }
             checkControl()
             if(serverInfo==null)instagramLease=InstagramSession.lease(applicationContext,job.url)
             val input=if(serverInfo==null) YoutubeDLRequest(job.url) else YoutubeDLRequest(emptyList<String>())

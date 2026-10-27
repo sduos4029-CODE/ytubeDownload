@@ -4,7 +4,18 @@ The message **"Flux could not retrieve this Instagram post's details"** comes
 from direct phone extraction. The 2.2 preview does not include an automatically
 hosted resolver. Installing it alone does not fix this failure.
 
-## Deploy a personal preview
+## First choice: Google Cloud Run
+
+Follow [the Google Cloud deployment guide](server/GOOGLE_CLOUD.md). It uses
+Cloud Build, Artifact Registry and Secret Manager to run the existing container
+on Cloud Run. A Google Cloud project with billing enabled is required; this is
+not a promise of free hosting. No Google account or deployment is connected here.
+
+If Google hosting cannot be used, use Render below. A failed Instagram extraction
+on Google does not establish that Render will work; each host needs a real Reel
+download test. The app accepts either host's HTTPS service address.
+
+## Second choice: Render personal preview
 
 [Open the Flux deployment setup on Render](https://render.com/deploy?repo=https%3A%2F%2Fgithub.com%2Fsduos4029-CODE%2FytubeDownload%2Ftree%2Fflux%2F2.2-server-preview)
 
@@ -37,7 +48,7 @@ Flux protocol and server key. Neither proves that Instagram will serve a Reel
 from that host. Search and complete a real download to test that separately.
 
 The reported Reel and a control post resolved anonymously from the GitHub CI
-server, but no Render deployment or phone transfer has been verified. Instagram
+server, but neither Google Cloud nor Render deployment or phone transfer has been verified. Instagram
 can reject requests from this host, and CDN URLs may expire or be restricted.
 If the server returns no formats, there is still no working fix from that host.
 

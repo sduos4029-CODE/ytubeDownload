@@ -5,14 +5,13 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.system.Os
 import android.util.Base64
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.net.HttpURLConnection
 import java.net.URI
-import java.net.URL
 import java.security.KeyStore
 import java.util.UUID
 import javax.crypto.Cipher
@@ -24,13 +23,14 @@ import javax.crypto.spec.GCMParameterSpec
 object ServerResolver {
     private const val ALIAS="flux.resolver.v1"
     private const val PREFS="flux_resolver"
-    private const val LIMIT=4*1024*1024
     private val changed=MutableStateFlow(0)
     val revision=changed.asStateFlow()
+    private val mutableStatus=MutableStateFlow(ServerStatus())
+    val status=mutableStatus.asStateFlow()
     data class Config(val origin:String,val token:String)
     private fun prefs(c:Context)=c.getSharedPreferences(PREFS,Context.MODE_PRIVATE)
     private fun directory(c:Context)=File(c.noBackupFilesDir,"resolver-info")
-    fun recover(c:Context) {directory(c).deleteRecursively()}
+    fun recover(c:Context) {directory(c).deleteRecursively();mutableStatus.value=ServerStatus(origin(c))}
     fun origin(c:Context)=prefs(c).getString("origin","").orEmpty()
     fun enabled(c:Context)=origin(c).isNotEmpty()
 
@@ -52,23 +52,28 @@ object ServerResolver {
         }.generateKey()
     }
     /** Caller tests ownership/protocol first. Save only on successful authenticated status. */
-    fun connect(c:Context,address:String,token:String) {
+    suspend fun connect(c:Context,address:String,token:String) {
         val config=Config(validateOrigin(address),token)
         require(token.matches(Regex("[A-Za-z0-9_-]{32,128}"))) {"Enter the access key generated for your Flux server."}
-        val response=call(config,"/v1/status",null)
-        require(response.optInt("protocol")==1 && response.optString("service")=="flux-resolver" && response.optString("authentication")=="no-instagram-login") {"This address is not a compatible Flux server."}
+        observe(config) {
+        ready(config)
+        validateStatus(call(config,"/v1/status",null))
+        currentCoroutineContext().ensureActive()
         val cipher=Cipher.getInstance("AES/GCM/NoPadding").apply {init(Cipher.ENCRYPT_MODE,key())}
         val plain=JSONObject().put("origin",config.origin).put("token",token).toString().toByteArray()
         val bytes=try {cipher.doFinal(plain)} finally {plain.fill(0)}
         val packet=JSONObject().put("iv",Base64.encodeToString(cipher.iv,Base64.NO_WRAP)).put("data",Base64.encodeToString(bytes,Base64.NO_WRAP))
         check(prefs(c).edit().putString("origin",config.origin).putString("encrypted",packet.toString()).commit()) {"Could not save the Flux server."}
         changed.value++
+        mark(config,"Reachable")
+        }
     }
     fun clear(c:Context) {
         check(prefs(c).edit().clear().commit())
         // Existing requests have immutable snapshots; do not delete active info files.
         KeyStore.getInstance("AndroidKeyStore").apply {load(null)}.deleteEntry(ALIAS)
         changed.value++
+        mutableStatus.value=ServerStatus()
     }
     private fun config(c:Context):Config? {
         if(!enabled(c))return null
@@ -80,45 +85,82 @@ object ServerResolver {
             return Config(validateOrigin(data.getString("origin")),data.getString("token"))
         } catch(_:Exception) {error("Flux server access key could not be read. Reconnect the server in Settings.")}
     }
-    private fun call(config:Config,path:String,body:JSONObject?):JSONObject {
-        val connection=(URL(config.origin+path).openConnection() as HttpURLConnection).apply {
-            instanceFollowRedirects=false;connectTimeout=10000;readTimeout=55000
-            requestMethod=if(body==null)"GET" else "POST"
-            setRequestProperty("Authorization","Bearer ${config.token}")
-            setRequestProperty("Accept","application/json")
-        }
+    private fun mark(config:Config,phase:String,issue:ServerIssue?=null) {
+        mutableStatus.value=ServerStatus(config.origin,phase,issue,System.currentTimeMillis())
+    }
+    private suspend fun <T> observe(config:Config,block:suspend ()->T):T {
+        try {return block()}
+        catch(cancel:CancellationException) {mark(config,"Saved");throw cancel}
+        catch(error:ServerFailure) {mark(config,"Failed",error.issue);throw error}
+    }
+    private fun validateStatus(json:JSONObject) {
+        if(json.optInt("protocol")!=1 || json.optString("service")!="flux-resolver" || json.optString("authentication")!="no-instagram-login")
+            throw ServerFailure(ServerIssue.Incompatible,"Flux server does not support this app's connection protocol.")
+    }
+    private suspend fun ready(config:Config,onWaiting:()->Unit={}) {
+        mark(config,"Checking")
+        var notified=false
         try {
-            if(body!=null) {
-                connection.doOutput=true;connection.setRequestProperty("Content-Type","application/json")
-                connection.outputStream.use {it.write(body.toString().toByteArray(Charsets.UTF_8))}
+            withTimeout(90000) {
+                while(true) {
+                    currentCoroutineContext().ensureActive()
+                    val reply=try {ServerTransport.request(config.origin,"/healthz",timeout=8000,limit=65536)}
+                    catch(error:ServerFailure) {
+                        if(error.issue!=ServerIssue.Network)throw error
+                        null
+                    }
+                    if(reply?.code==200 && reply.json!=null) {
+                        val json=reply.json
+                        if(json.optString("service")!="flux-resolver" || json.optInt("protocol")!=1 || json.optString("status")!="running")
+                            throw ServerFailure(ServerIssue.Incompatible,"Flux server health check returned an incompatible service.")
+                        return@withTimeout
+                    }
+                    if(reply!=null && !ServerTransport.retryHealth(reply.code,reply.html,URI(config.origin).host))
+                        throw ServerFailure(ServerIssue.Incompatible,"Flux server health check did not return the expected service. Check its HTTPS address and deployment.")
+                    mark(config,"Waking")
+                    if(!notified) {onWaiting();notified=true}
+                    delay(1000)
+                }
             }
-            val code=connection.responseCode
-            require(code !in 300..399) {"Flux server redirected the request. Enter its final HTTPS origin in Settings."}
-            val stream=if(code in 200..299)connection.inputStream else connection.errorStream
-            val bytes=stream?.use {it.readBytesBounded(LIMIT)} ?: byteArrayOf()
-            val json=runCatching {JSONObject(String(bytes,Charsets.UTF_8))}.getOrElse {error("Flux server returned an invalid response.")}
-            if(code !in 200..299)error(when(code) {
-                401,403 -> "Flux server access was rejected. Check its access key in Settings."
-                422 -> "The Flux server could not retrieve this public Instagram post. Instagram may be limiting this server; no Instagram login is required by Flux."
-                429 -> "Flux server request limit reached. Wait one minute before retrying."
-                else -> "Flux server is unavailable (HTTP $code). Retry later."
-            })
-            return json
-        }catch(e:java.io.IOException) {throw java.io.IOException("Could not reach the Flux server. Check its HTTPS address and hosting status.",e)}
-        finally {connection.disconnect()}
+        }catch(timeout:TimeoutCancellationException) {
+            currentCoroutineContext().ensureActive()
+            throw ServerFailure(ServerIssue.StartupTimeout,"Flux server did not become ready within 90 seconds. Check hosting and try again.")
+        }
     }
-    private fun java.io.InputStream.readBytesBounded(limit:Int):ByteArray {
-        val out=java.io.ByteArrayOutputStream();val buffer=ByteArray(16384)
-        while(true) {val count=read(buffer);if(count<0)break;require(out.size()+count<=limit) {"Flux server response is too large."};out.write(buffer,0,count)}
-        return out.toByteArray()
+    private suspend fun call(config:Config,path:String,body:JSONObject?):JSONObject {
+        val reply=ServerTransport.request(config.origin,path,config.token,body)
+        if(reply.code !in 200..299)throw when(reply.code) {
+            401,403 -> ServerFailure(ServerIssue.AccessDenied,"Flux server access was rejected. Check its access key in Settings.")
+            422 -> ServerFailure(ServerIssue.SourceUnavailable,"The Flux server could not retrieve this public Instagram post. Instagram may be limiting this server; no Instagram login is requested by Flux.")
+            429 -> ServerFailure(ServerIssue.RateLimited,"Flux server request limit reached. Wait one minute before retrying.")
+            502,503,504 -> ServerFailure(ServerIssue.Busy,"Flux server is unavailable (HTTP ${reply.code}). Retry later.")
+            else -> ServerFailure(ServerIssue.InvalidResponse,"Flux server returned an unexpected HTTP ${reply.code} response.")
+        }
+        return reply.json ?: throw ServerFailure(ServerIssue.InvalidResponse,"Flux server returned a web page or invalid response. Check that the address is the running Flux backend.")
     }
-    fun resolve(c:Context,url:String):JSONObject? {
+    suspend fun testConnection(c:Context) {
+        val config=config(c) ?: throw ServerFailure(ServerIssue.NotConfigured,"No Flux server is configured. Deploy the backend and connect it in Settings.")
+        observe(config) {ready(config);validateStatus(call(config,"/v1/status",null));mark(config,"Reachable")}
+    }
+    fun diagnostics(c:Context):String {
+        val last=mutableStatus.value
+        val matches=enabled(c) && last.origin==origin(c)
+        return "Flux ${BuildConfig.VERSION_NAME}\nAndroid API ${android.os.Build.VERSION.SDK_INT}\nServer saved: ${enabled(c)}\nLast check: ${if(matches)last.phase else "Not checked"}\nResult: ${if(matches)last.issue?.name ?: "None" else "None"}\nInstagram retrieval is not certified by a connection check.\nAccess keys, server addresses and source links are excluded."
+    }
+    suspend fun resolve(c:Context,url:String,onWaiting:()->Unit={}):JSONObject? {
         if(!MediaLinks.isInstagram(url))return null // scope BEFORE reading credentials
         val config=config(c) ?: return null
-        val canonical=MediaLinks.parse(url)!!.url
-        val response=call(config,"/v1/resolve",JSONObject().put("url",canonical))
-        require(response.optInt("protocol")==1 && response.optString("source_url")==canonical && response.optInt("expires_in") in 1..120) {"Flux server returned details for a different post or an unsupported protocol."}
-        return sanitize(response.getJSONObject("info"),canonical)
+        return observe(config) {
+            ready(config,onWaiting)
+            val canonical=MediaLinks.parse(url)!!.url
+            val response=call(config,"/v1/resolve",JSONObject().put("url",canonical))
+            val info=try {
+                require(response.optInt("protocol")==1 && response.optString("source_url")==canonical && response.optInt("expires_in") in 1..120)
+                sanitize(response.getJSONObject("info"),canonical)
+            }catch(_:Exception) {throw ServerFailure(ServerIssue.InvalidResponse,"Flux server returned invalid details for this post. No media was downloaded.")}
+            mark(config,"Reachable")
+            info
+        }
     }
     private fun mediaUrl(value:String):String {
         val u=URI(value)
@@ -163,8 +205,8 @@ object ServerResolver {
         InstagramPost.parse(result,url)
         return result
     }
-    fun downloadInfo(c:Context,url:String,itemId:String):Lease? {
-        val info=resolve(c,url) ?: return null
+    suspend fun downloadInfo(c:Context,url:String,itemId:String,onWaiting:()->Unit={}):Lease? {
+        val info=resolve(c,url,onWaiting) ?: return null
         val nodes=info.optJSONArray("entries") ?: JSONArray().put(info)
         val selected=(0 until nodes.length()).map {nodes.getJSONObject(it)}.firstOrNull {itemId.isBlank() || it.getString("id")==itemId}
             ?: error("The selected Instagram item changed. Load the post again.")

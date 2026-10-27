@@ -16,7 +16,7 @@ object SourceFailures {
             error.contains("cookies are no longer valid",true) || error.contains("connection expired",true) -> "Your Instagram connection expired. Reconnect Instagram in Settings, then retry."
             // This extractor error includes generic login/cookie advice. It
             // does not establish that the post is private or unavailable.
-            error.contains("empty media response",true) -> "Flux could not retrieve this Instagram post's details. Public posts can also fail with the current extractor. No thumbnail or download formats were returned. A verified public Instagram server can provide another retrieval route in Settings."
+            error.contains("empty media response",true) -> "Flux could not retrieve this Instagram post through direct access. No thumbnail or download formats were returned. This request did not use a Flux server. Configure the public Instagram server in Settings; hosting is not included."
             error.contains("login",true) || error.contains("sign in",true) || error.contains("private",true) -> "Instagram requires sign-in for this request. Connect or reconnect Instagram in Settings."
             error.contains("401") -> "Instagram rejected this request. Connect or reconnect Instagram in Settings, then retry."
             error.contains("403") -> "Instagram denied access to this post. Try another public post or retry later."
