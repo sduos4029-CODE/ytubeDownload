@@ -11,7 +11,7 @@ require Save clip. Cancel clip edit leaves the saved range unchanged. Arrow
 buttons move clips earlier/later; removing a clip offers one-level Undo removal.
 Undo is cleared by another add/save/reorder so it cannot discard later changes.
 
-Add clip and Review export stay visible while scrolling. A count and combined
+Play/pause, Add clip and Review export stay visible while scrolling. A count and combined
 duration show what is included. When added clips exist, export uses exactly
 that saved list, even while another range is being prepared. The current range
 is included only after Add clip; an open clip edit must be saved or cancelled

@@ -29,6 +29,7 @@ fun MediaToolsDialog(source:Download,onDismiss:()->Unit,onQueued:()->Unit) {
     var clips by remember{mutableStateOf<List<TrimClip>>(emptyList())};var selected by remember{mutableStateOf(-1)}
     var message by remember{mutableStateOf("")};var busy by remember{mutableStateOf(false)}
     var menu by remember{mutableStateOf(false)};var confirm by remember{mutableStateOf<Download?>(null)}
+    val playback=remember(source.id){TrimPlayback()}
     val scroll=rememberScrollState()
     var advanced by remember{mutableStateOf(false)}
     var undoClips by remember{mutableStateOf<List<TrimClip>?>(null)}
@@ -88,7 +89,7 @@ fun MediaToolsDialog(source:Download,onDismiss:()->Unit,onQueued:()->Unit) {
                     if(data!=null) {
                         val from=if(operation==EditOperation.Trim)start else "0"
                         val until=if(operation==EditOperation.Trim)end else trimTime(kotlin.math.floor(data.seconds*1000)/1000)
-                        TrimPreview(source,data,from,until,active=confirm==null && !busy,showTrim=operation==EditOperation.Trim,onRange=::range)
+                        TrimPreview(source,data,from,until,active=confirm==null && !busy,showTrim=operation==EditOperation.Trim,controls=playback,onRange=::range)
                     } else if(message.isBlank())LinearProgressIndicator(Modifier.fillMaxWidth())
                     if(operation==EditOperation.Trim) {
                         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
@@ -153,6 +154,9 @@ fun MediaToolsDialog(source:Download,onDismiss:()->Unit,onQueued:()->Unit) {
                 }
                 HorizontalDivider()
                 if(message.isNotBlank())Text(message,modifier=Modifier.padding(horizontal=16.dp),color=MaterialTheme.colorScheme.error)
+                if(info!=null)TextButton(enabled=playback.canPlay && !busy,onClick={playback.toggle()},modifier=Modifier.fillMaxWidth()) {
+                    Text(if(playback.playing)"Pause preview" else "Play selected clip")
+                }
                 if(editing)Text("Clip ${selected+1} · $start → $end",modifier=Modifier.padding(horizontal=16.dp),style=MaterialTheme.typography.bodySmall)
                 else if(listMode)Text("Export: ${clips.size} clips · ${trimTime(clips.sumOf{it.seconds})} seconds",modifier=Modifier.padding(horizontal=16.dp),style=MaterialTheme.typography.bodySmall)
                 Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=8.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
