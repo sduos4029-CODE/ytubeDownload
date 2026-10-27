@@ -26,7 +26,7 @@ fun ProgressPanel(job: Download) {
         if (!job.audioOnly && job.selector.contains('+')) add("Merge")
         add("Save")
     }
-    val current = when (job.state) { "Merging" -> "Merge"; "Saving" -> "Save"; else -> "Download" }
+    val current = when (job.state) { "Merging" -> "Merge"; "Saving", "Verifying" -> "Save"; else -> "Download" }
     Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         stages.forEachIndexed { index, stage ->
             val active = stage == current
@@ -49,7 +49,7 @@ fun ProgressPanel(job: Download) {
             color = colors.secondary, fontSize = 11.sp, modifier = Modifier.padding(top = 5.dp))
         Text(if(job.isPhoto) "Estimates apply to downloading; saving takes additional time." else "Estimates apply to this stream; merging and saving take additional time.", color = colors.onSurfaceVariant,
             fontSize = 10.sp, lineHeight = 14.sp, modifier = Modifier.padding(top = 6.dp))
-    } else if (job.state == "Merging" || job.state == "Pausing") {
+    } else if (job.state == "Merging" || job.state == "Pausing" || job.state == "Verifying") {
         LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 10.dp))
     } else if (job.state == "Saving" || job.progress > 0) {
         LinearProgressIndicator(progress = { (job.progress / 100).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().padding(top = 10.dp))

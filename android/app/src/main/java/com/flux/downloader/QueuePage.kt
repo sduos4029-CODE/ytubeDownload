@@ -71,7 +71,7 @@ fun QueuePage(jobs: List<Download>) {
                     }
                     Row(Modifier.fillMaxWidth().padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(when (job.state) {
-                            "Queued" -> if (paused) "Queue paused" else if (transfers.wifiOnly && !onWifi) "Waiting for Wi-Fi" else "Queued · #${waiting.indexOfFirst { it.id == job.id } + 1}"
+                            "Queued" -> if(job.scheduledAt>System.currentTimeMillis()) "Scheduled · ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(job.scheduledAt))}" else if(!ChargingGate.allowed()) "Waiting for charging" else if (paused) "Queue paused" else if (transfers.wifiOnly && !onWifi) "Waiting for Wi-Fi" else "Queued · #${waiting.indexOfFirst { it.id == job.id } + 1}"
                             "Pausing" -> "Pausing…"
                             "Retrying" -> "Retry ${job.retryCount}/${QueueRules.MAX_RETRIES} scheduled"
                             else -> job.state
@@ -84,6 +84,7 @@ fun QueuePage(jobs: List<Download>) {
                     if (job.audioDescription.isNotBlank()) Text("Audio: ${job.audioDescription}", color = colors.secondary,
                         fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 7.dp))
                     Row(Modifier.fillMaxWidth().padding(top = 5.dp), horizontalArrangement = Arrangement.End) {
+                        if(job.state in QueueRules.runnableStates && job.scheduledAt>System.currentTimeMillis())TextButton(onClick={Downloads.startNow(context,job)}){Text("Start now")}
                         if (job.state in QueueRules.runnableStates && waiting.firstOrNull()?.id != job.id) TextButton(onClick = { Downloads.next(context, job) }) {
                             Icon(Icons.Rounded.ArrowUpward, null, Modifier.size(17.dp)); Text("Download next", fontSize = 12.sp)
                         }

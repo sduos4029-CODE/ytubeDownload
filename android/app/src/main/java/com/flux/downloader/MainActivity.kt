@@ -55,6 +55,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 
 private val Ink = Color(0xFF0C0D13)
 private val Panel = Color(0xFF171822)
@@ -194,8 +195,8 @@ private fun FluxApp(shared: String, model: FluxModel = viewModel()) {
                 Downloads.enqueue(context,MediaDownloads.prepare(video,folder))
                 if (Build.VERSION.SDK_INT >= 33) notification.launch(Manifest.permission.POST_NOTIFICATIONS)
                 model.selected = null; page = 1
-            } else FormatSheet(video) { format, selectedAudio ->
-                Downloads.enqueue(context, MediaDownloads.prepare(video,folder,format,selectedAudio))
+            } else FormatSheet(video) { format, selectedAudio,subtitle ->
+                Downloads.enqueue(context, MediaDownloads.prepare(video,folder,format,selectedAudio,honourPreference=false).copy(subtitleLanguage=subtitle))
                 if (Build.VERSION.SDK_INT >= 33) notification.launch(Manifest.permission.POST_NOTIFICATIONS)
                 model.selected = null; page = 1
             }
@@ -210,16 +211,30 @@ private fun FluxApp(shared: String, model: FluxModel = viewModel()) {
 @Composable
 private fun Discover(model: FluxModel, onBatchQueued: ()->Unit) {
     val context=LocalContext.current
+    val batchScope=rememberCoroutineScope()
+    var batchTask by remember {mutableStateOf<Job?>(null)}
+    var batchStatus by remember {mutableStateOf("")}
     var confirmItems by remember { mutableStateOf<List<Video>>(emptyList()) }
     if(confirmItems.isNotEmpty()) AlertDialog(onDismissRequest={confirmItems=emptyList()},title={Text("Download ${confirmItems.size} items?")},
         text={Text("Photos keep the best available source image. Videos use the highest reported resolution and best available source audio. Each item has separate progress in Downloads.")},
         confirmButton={TextButton(onClick={
             val items=confirmItems;confirmItems=emptyList()
-            runCatching {
-                val jobs=items.map { MediaDownloads.prepare(it,Store.folder.value) }
-                jobs.forEach { Downloads.enqueue(context,it) }
-                model.selectedItems=emptySet();onBatchQueued()
-            }.onFailure { Toast.makeText(context,it.message ?: "Load this post again before downloading.",Toast.LENGTH_LONG).show() }
+            batchTask=batchScope.launch {
+                val queued=mutableListOf<Download>();var skipped=0
+                try {
+                    items.take(PlaylistSelection.MAX_ITEMS).forEachIndexed {index,item ->
+                        batchStatus="Preparing ${index+1} of ${items.size}"
+                        try {
+                            val full=if(item.formats.isEmpty())Engine.inspect(context,item) else item
+                            queued.add(MediaDownloads.prepare(full,Store.folder.value))
+                        }catch(e:CancellationException){throw e}catch(_:Exception){skipped++}
+                    }
+                    queued.forEach {Downloads.enqueue(context,it)}
+                    model.selectedItems=emptySet()
+                    Toast.makeText(context,"${queued.size} queued · $skipped unavailable items skipped",Toast.LENGTH_LONG).show()
+                    if(queued.isNotEmpty())onBatchQueued()
+                }finally {batchStatus="";batchTask=null}
+            }
         }) {Text("Queue items")}},dismissButton={TextButton(onClick={confirmItems=emptyList()}) {Text("Keep browsing")}})
     val clipboard = LocalClipboardManager.current
     LazyColumn(contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -249,7 +264,7 @@ private fun Discover(model: FluxModel, onBatchQueued: ()->Unit) {
                         else Icon(Icons.Rounded.Search, null, Modifier.size(20.dp))
                         Text(if (model.busy) "Finding your video…" else "Find video", Modifier.padding(start = 10.dp), fontWeight = FontWeight.Bold)
                     }
-                    Text("Words search YouTube. Paste a public Instagram Reel, photo or carousel post link. Profiles, Stories, Threads and login-required posts are not supported.",
+                    Text("Words search YouTube. YouTube playlist links show up to 50 entries for selection. Paste a public Instagram Reel, photo or carousel post link. Profiles, Stories, Threads and login-required posts are not supported.",
                         color = Muted, fontSize = 11.sp, lineHeight = 16.sp, modifier = Modifier.padding(top = 12.dp))
                 }
             }
@@ -266,16 +281,19 @@ private fun Discover(model: FluxModel, onBatchQueued: ()->Unit) {
                 Spacer(Modifier.height(12.dp));ServerConnectionCard()
             }
         } }
+        if(batchTask!=null)item {
+            Column {LinearProgressIndicator(Modifier.fillMaxWidth());Text(batchStatus);TextButton(onClick={batchTask?.cancel()}){Text("Cancel batch preparation")}}
+        }
         if (model.inspecting) item { LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Lilac) }
         if (model.results.isNotEmpty()) {
             item { SectionTitle("Found for you", "${model.results.size} result${if (model.results.size > 1) "s" else ""}") }
-            if(model.results.size>1 && model.results.all { it.platform==MediaPlatform.Instagram }) item {
+            if(model.results.size>1 && model.results.all { it.itemCount>1 }) item {
                 Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                    Text("Choose photos and videos",fontWeight=FontWeight.Bold)
-                    Text("${model.selectedItems.size} selected · up to 20 items per post",color=Muted,fontSize=12.sp)
+                    Text(if(model.results.first().platform==MediaPlatform.YouTube)"Choose playlist videos" else "Choose photos and videos",fontWeight=FontWeight.Bold)
+                    Text("${model.selectedItems.size} selected · ${if(model.results.first().platform==MediaPlatform.YouTube)"first 50 available playlist entries" else "up to 20 items per post"}",color=Muted,fontSize=12.sp)
                     Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick={confirmItems=model.results}) {Text("Download all")}
-                        FilledTonalButton(enabled=model.selectedItems.isNotEmpty(),onClick={confirmItems=model.results.filter { it.key in model.selectedItems }}) {Text("Download selected")}
+                        OutlinedButton(enabled=batchTask==null,onClick={confirmItems=model.results}) {Text("Download all")}
+                        FilledTonalButton(enabled=model.selectedItems.isNotEmpty() && batchTask==null,onClick={confirmItems=model.results.filter { it.key in model.selectedItems }}) {Text("Download selected")}
                     }
                 }
             }
@@ -332,14 +350,16 @@ private fun VideoCard(video: Video, disabled: Boolean, select: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun FormatSheet(video: Video, onDownload: (MediaFormat, MediaFormat?) -> Unit) {
+private fun FormatSheet(video: Video, onDownload: (MediaFormat, MediaFormat?,String) -> Unit) {
     var audio by remember(video.key) { mutableStateOf(false) }
     var chosen by remember(video.key, audio) { mutableStateOf<MediaFormat?>(null) }
     val sourceAudios = remember(video.key) { video.formats.filter { it.audio && !it.video }.asReversed().sortedBy { it.isDrc } }
-    var selectedAudio by remember(video.key) { mutableStateOf<MediaFormat?>(null) }
+    var selectedAudio by remember(video.key) { mutableStateOf(AudioSelection.preferred(video)) }
+    var subtitle by remember(video.key) {mutableStateOf("")}
+    var subtitleMenu by remember {mutableStateOf(false)}
     var audioMenu by remember { mutableStateOf(false) }
     val formats = remember(video.key, audio) {
-        if (audio) sourceAudios else video.formats.filter { it.video }
+        if (audio) sourceAudios.sortedBy {if(it.id==AudioSelection.preferred(video)?.id)0 else 1} else video.formats.filter { it.video }
             .sortedWith(compareByDescending<MediaFormat> { it.height }.thenByDescending { it.fps }.thenBy { it.extension })
     }
     val selected = chosen ?: formats.firstOrNull()
@@ -398,7 +418,23 @@ private fun FormatSheet(video: Video, onDownload: (MediaFormat, MediaFormat?) ->
             "Keeps the chosen video and audio without re-encoding. Existing embedded audio is replaced when needed. Saves as MKV. 4K describes video resolution; audio quality depends on the source."
             else "Keeps the source audio without re-encoding. Higher bitrate across different codecs does not always mean better sound. Quality missing from the source cannot be restored.",
             fontSize = 11.sp, color = Muted, lineHeight = 16.sp, modifier = Modifier.padding(vertical = 14.dp))
-        Button(onClick = { selected?.let { onDownload(it, selectedAudio) } }, enabled = selected != null,
+        val context=LocalContext.current
+        val estimated=selected?.let {StorageBudget.estimate(it,selectedAudio,it.video && sourceAudios.isNotEmpty())}?:0L
+        var free by remember {mutableStateOf<Long?>(null)}
+        LaunchedEffect(video.key){free=withContext(Dispatchers.IO){StorageBudget.available(context)}}
+        Text("Working storage: ${free?.let(::sizeLabel)?:"Checking…"} available · ${StorageBudget.required(estimated)?.let {"about ${sizeLabel(it)} needed"}?:"source size unavailable"}",style=MaterialTheme.typography.bodySmall)
+        Text("Estimate includes source download, merge/save copies and a reserve. A selected external folder's free space may be unavailable.",style=MaterialTheme.typography.bodySmall)
+        if(!audio && video.subtitleLanguages.isNotEmpty()) {
+            Box {
+                OutlinedButton(onClick={subtitleMenu=true}){Text("Subtitles: ${subtitle.ifBlank {"None"}}")}
+                DropdownMenu(expanded=subtitleMenu,onDismissRequest={subtitleMenu=false}) {
+                    DropdownMenuItem(text={Text("None")},onClick={subtitle="";subtitleMenu=false})
+                    video.subtitleLanguages.forEach {language ->DropdownMenuItem(text={Text(language)},onClick={subtitle=language;subtitleMenu=false})}
+                }
+            }
+            Text("Available manual subtitles are requested and embedded in MKV. Automatic captions are excluded. Availability can change before download.",style=MaterialTheme.typography.bodySmall)
+        }
+        Button(onClick = { selected?.let { onDownload(it, selectedAudio,if(audio)"" else subtitle) } }, enabled = selected != null,
             modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(14.dp)) {
             Icon(Icons.Rounded.Download, null, Modifier.size(20.dp))
             Text("Download ${selected?.label.orEmpty()}", fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp))
@@ -415,6 +451,7 @@ private fun SettingsPage(folder: String, active: Boolean, model: FluxModel, onFo
         ServerConnectionCard()
         InstagramConnectionCard()
         TransferSettingsCard()
+        UpgradeSettingsCard()
         Surface(color = Panel, shape = RoundedCornerShape(20.dp)) {
             Column(Modifier.padding(18.dp)) {
                 Icon(Icons.Rounded.FolderOpen, null, tint = Lilac)

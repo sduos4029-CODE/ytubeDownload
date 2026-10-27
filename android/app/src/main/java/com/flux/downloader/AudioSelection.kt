@@ -13,6 +13,12 @@ object AudioSelection {
     // Keep yt-dlp's codec/quality/language ranking; prefer non-DRC source audio.
     // Parentheses keep the fallback inside the audio side of a video+audio pair.
     const val BEST = "bestaudio[format_id!*=drc]/bestaudio"
+    fun preferred(video:Video,language:String=UpgradeSettings.preferences.value.language):MediaFormat? {
+        if(language.isBlank())return null
+        val source=video.formats.filter {it.audio && !it.video}.asReversed().sortedBy {it.isDrc}
+        return source.firstOrNull {it.language.equals(language,true)}
+            ?:source.firstOrNull {it.language.substringBefore('-').equals(language.substringBefore('-'),true)}
+    }
     data class Plan(val selector: String, val replaceEmbeddedAudio: Boolean, val description: String)
     fun plan(video: Video, format: MediaFormat, selectedAudio: MediaFormat? = null): Plan {
         if (!format.video) return Plan(format.id, false, format.audioLabel)

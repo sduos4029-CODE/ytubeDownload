@@ -41,7 +41,7 @@ data class LibraryPreferences(val layout: LibraryLayout = LibraryLayout.List, va
 
 fun libraryJobs(jobs: List<Download>, query: String, kind: String, sort: LibrarySort, favouritesOnly: Boolean = false,
     status: LibraryStatus = LibraryStatus.All): List<Download> {
-    val matching = jobs.filter { it.terminal && (status.state == null || it.state == status.state) && (!favouritesOnly || it.favourite) && it.title.contains(query.trim(), ignoreCase = true) &&
+    val matching = jobs.filter { it.terminal && (status.state == null || it.state == status.state) && (!favouritesOnly || it.favourite) && (it.title+" "+it.collection+" "+it.tags).contains(query.trim(), ignoreCase = true) &&
         (kind == "All" || (kind == "Audio" && it.audioOnly) || (kind == "Video" && !it.audioOnly && !it.isPhoto) || (kind == "Photos" && it.isPhoto)) }
     return when (sort) {
         LibrarySort.Newest -> matching.sortedByDescending { it.created }
@@ -54,6 +54,7 @@ fun libraryJobs(jobs: List<Download>, query: String, kind: String, sort: Library
 @Composable
 fun LibraryPage(jobs: List<Download>, onRetry: (Download) -> Unit, onDownloadAgain: (Download) -> Unit, onShowDownloads: () -> Unit) {
     val prefs by Store.library.collectAsState()
+    var collectionFilter by remember {mutableStateOf("")}
     var query by remember { mutableStateOf("") }
     var kind by remember { mutableStateOf("All") }
     var sortMenu by remember { mutableStateOf(false) }
@@ -67,7 +68,7 @@ fun LibraryPage(jobs: List<Download>, onRetry: (Download) -> Unit, onDownloadAga
     var removal by remember { mutableStateOf(emptySet<String>()) }
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val shown = remember(jobs, query, kind, prefs.sort, favouritesOnly, status) { libraryJobs(jobs, query, kind, prefs.sort, favouritesOnly, status) }
+    val shown = remember(jobs, query, kind, prefs.sort, favouritesOnly, status,collectionFilter) { libraryJobs(jobs, query, kind, prefs.sort, favouritesOnly, status).filter {collectionFilter.isBlank() || it.collection==collectionFilter} }
     val context = LocalContext.current
     jobs.find { it.id == detailsId }?.let { job -> LibraryDetailsDialog(job,
         onDownloadAgain = { detailsId = null; repeatId = job.id }, onDismiss = { detailsId = null }) }
@@ -179,6 +180,8 @@ fun LibraryPage(jobs: List<Download>, onRetry: (Download) -> Unit, onDownloadAga
         item(span = { GridItemSpan(maxLineSpan) }) {
             Column {
                 Text("Your offline collection", fontSize = 27.sp, fontWeight = FontWeight.Bold)
+                LibraryOrganisationPanel(jobs,selected,collectionFilter) {collectionFilter=it}
+                if(collectionFilter.isNotBlank())Text("Collection: $collectionFilter")
                 if (!selecting && shown.isNotEmpty()) TextButton(onClick = { selecting = true }) { Text("Select downloads") }
                 Text("${jobs.count { it.state == "Complete" }} saved · arrange it your way", color = colors.onSurfaceVariant,
                     fontSize = 12.sp, modifier = Modifier.padding(top = 7.dp, bottom = 16.dp))
@@ -304,6 +307,7 @@ private fun LibraryCard(job: Download, prefs: LibraryPreferences, onRetry: (Down
             if (!compact) {
                 if (job.audioDescription.isNotBlank() && !small) Text(job.audioDescription, color = colors.secondary,
                     maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 10.sp, lineHeight = 15.sp, modifier = Modifier.padding(top = 10.dp))
+                if(job.verification.isNotBlank() && !small)Text(job.verification,color=if(job.verification.startsWith("Unverified"))colors.error else colors.onSurfaceVariant,fontSize=10.sp,modifier=Modifier.padding(top=6.dp))
                 if (job.state != "Complete") Text(job.detail, color = colors.error, fontSize = 11.sp,
                     maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

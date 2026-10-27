@@ -31,6 +31,6 @@ object RepeatDownloads {
         require(original.selector.isNotBlank()) { "Choose an available quality in Discover." }
         return original.copy(id = UUID.randomUUID().toString(), state = "Queued", progress = 0f,
             detail = "Waiting to download again", uri = "", mime = "", pendingUri = "", bytes = 0,
-            retryCount = 0, nextAttemptAt = 0, folder = folder, created = now, queueOrder = now, favourite = false)
+            retryCount = 0, nextAttemptAt = 0, folder = folder, created = now, queueOrder = now, favourite = false, scheduledAt=UpgradeSettings.preferences.value.startAt, verification="")
     }
 }
