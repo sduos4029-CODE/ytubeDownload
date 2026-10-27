@@ -268,6 +268,29 @@ class RuntimeChecks : Instrumentation() {
                 if(mediaToolsUiOnly) {
                     Store.setLibrary(LibraryPreferences(LibraryLayout.List,LibrarySize.Small,LibrarySort.Title))
                     click("Library");click("More actions for Flux media tools source");click("Media tools")
+                    fun trimEnd(node:android.view.accessibility.AccessibilityNodeInfo?):android.view.accessibility.AccessibilityNodeInfo? {
+                        if(node==null)return null
+                        if(node.rangeInfo?.current==6f && node.actionList.any{it.id==android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS.id})return node
+                        for(i in 0 until node.childCount){val found=trimEnd(node.getChild(i));if(found!=null)return found}
+                        return null
+                    }
+                    var endHandle=trimEnd(uiAutomation.rootInActiveWindow)
+                    val handleDeadline=System.currentTimeMillis()+15000
+                    while(endHandle==null && System.currentTimeMillis()<handleDeadline) {
+                        fun area(node:android.view.accessibility.AccessibilityNodeInfo?):android.view.accessibility.AccessibilityNodeInfo? {
+                            if(node==null)return null
+                            if(node.isScrollable)return node
+                            for(i in 0 until node.childCount){val found=area(node.getChild(i));if(found!=null)return found}
+                            return null
+                        }
+                        area(uiAutomation.rootInActiveWindow)?.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+                        Thread.sleep(200);endHandle=trimEnd(uiAutomation.rootInActiveWindow)
+                    }
+                    check(endHandle!=null){"Trim end slider was unavailable"}
+                    check(endHandle!!.performAction(android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS.id,Bundle().apply {
+                        putFloat(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_PROGRESS_VALUE,2f)
+                    })){"Trim end slider did not accept a new selection"}
+                    Thread.sleep(300)
                     click("Play selected clip")
                     var preview:android.widget.VideoView?=null
                     runOnMainSync {
@@ -278,8 +301,8 @@ class RuntimeChecks : Instrumentation() {
                     click("Pause preview")
                     runOnMainSync {check(preview?.isPlaying==false){"Preview did not pause"}}
                     click("Play selected clip")
-                    Thread.sleep(7000)
-                    runOnMainSync {check(preview?.isPlaying==false){"Preview did not stop at the end"}}
+                    Thread.sleep(2700)
+                    runOnMainSync {check(preview?.isPlaying==false && preview!!.currentPosition<=2400){"Preview did not stop at the selected end"}}
                     report("PASS: release trim preview decodes the saved video, plays and pauses on request, and stops at the selection end")
                     val screenshot=uiAutomation.takeScreenshot()
                     if(screenshot!=null) {
@@ -288,7 +311,7 @@ class RuntimeChecks : Instrumentation() {
                     val before=Store.downloads.value.map{it.id}.toSet()
                     click("Review export");click("Create new file")
                     val queued=Store.downloads.value.single {it.id !in before}
-                    check(queued.isLocalEdit && queued.state=="Paused" && queued.editOperation==EditOperation.Trim.name && queued.editSourceUri.startsWith("content://"))
+                    check(queued.isLocalEdit && queued.state=="Paused" && queued.editOperation==EditOperation.Trim.name && queued.editEnd==2.0 && queued.editSourceUri.startsWith("content://"))
                     Downloads.cancel(targetContext,queued)
                     report("PASS: release Library media-tools dialog, trim/output controls and explicit new-file confirmation queue a local job without changing the source")
                     result.putString("stream","MEDIA TOOLS UI CHECKS PASSED\n");finish(Activity.RESULT_OK,result);return
