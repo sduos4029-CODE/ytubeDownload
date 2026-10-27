@@ -57,7 +57,7 @@ fun ServerConnectionCard() {
                 color=MaterialTheme.colorScheme.primary)
             Text(if(!saved)"Direct Instagram access is in use. A public post can still fail on this connection."
                 else "The address and access key are saved on this device. A connection check tests the service, not Instagram availability.",style=MaterialTheme.typography.bodySmall)
-            Text("Hosting is not included. Deploy a Flux backend, then enter its HTTPS address and server access key. The backend requests no Instagram login.",style=MaterialTheme.typography.bodySmall)
+            Text("Hosting is not included. Use Google Cloud Run first, or Render as a fallback. Deploy your backend, then enter its HTTPS address and server access key. No Instagram login is requested.",style=MaterialTheme.typography.bodySmall)
             Text("The server sees pasted post links and your IP address. Connect only to a host you trust.",style=MaterialTheme.typography.bodySmall)
             if(busy) {
                 LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -65,8 +65,10 @@ fun ServerConnectionCard() {
                 TextButton(onClick={action?.cancel()}) {Text("Cancel server check")}
             }
             FilledTonalButton(enabled=saved && !busy,onClick={check(false)}) {Text("Test saved server")}
-            TextButton(enabled=!busy,onClick={open("https://github.com/sduos4029-CODE/ytubeDownload/blob/flux/2.2-server-preview/HOSTING.md")}) {Text("Open setup guide")}
-            TextButton(enabled=!busy,onClick={open("https://render.com/deploy?repo=https%3A%2F%2Fgithub.com%2Fsduos4029-CODE%2FytubeDownload%2Ftree%2Fflux%2F2.2-server-preview")}) {Text("Deploy preview backend")}
+            TextButton(enabled=!busy,onClick={open("https://github.com/sduos4029-CODE/ytubeDownload/blob/flux/2.2.2-google-first/HOSTING.md")}) {Text("Open setup guide")}
+            TextButton(enabled=!busy,onClick={open("https://github.com/sduos4029-CODE/ytubeDownload/blob/flux/2.2.2-google-first/server/GOOGLE_CLOUD.md")}) {Text("1. Google Cloud Run setup")}
+            Text("Google Cloud requires a billing-enabled project. Usage charges can apply.",style=MaterialTheme.typography.bodySmall)
+            TextButton(enabled=!busy,onClick={open("https://render.com/deploy?repo=https%3A%2F%2Fgithub.com%2Fsduos4029-CODE%2FytubeDownload%2Ftree%2Fflux%2F2.2-server-preview")}) {Text("2. Render fallback setup")}
             TextButton(enabled=!busy,onClick={editing=!editing}) {Text(if(editing)"Hide server setup" else "Set up server")}
             TextButton(onClick={
                 context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Flux server status",ServerResolver.diagnostics(context)))

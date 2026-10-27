@@ -65,7 +65,7 @@ existing secret. The runtime identity receives access to this secret only.
 Clone the prepared branch (or enter your existing checkout of it):
 
 ```bash
-git clone --branch flux/2.2.1-server-status --single-branch https://github.com/sduos4029-CODE/ytubeDownload.git flux-cloud
+git clone --branch flux/2.2.2-google-first --single-branch https://github.com/sduos4029-CODE/ytubeDownload.git flux-cloud
 cd flux-cloud
 FLUX_IMAGE="${FLUX_REGION}-docker.pkg.dev/${FLUX_PROJECT_ID}/flux/flux-resolver:preview"
 gcloud builds submit --config=server/cloudbuild.yaml --substitutions="_IMAGE=${FLUX_IMAGE}" .

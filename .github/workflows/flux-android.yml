@@ -79,7 +79,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: Flux-2.2.1-preview-unsigned
+          name: Flux-2.2.2-preview-unsigned
           path: |
             android/app/build/outputs/apk/release/app-release-unsigned.apk
             android/app/build/outputs/apk/release/app-release-unsigned.apk.sha256
