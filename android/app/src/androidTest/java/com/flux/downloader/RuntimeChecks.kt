@@ -246,7 +246,30 @@ class RuntimeChecks : Instrumentation() {
                 if(serverUiOnly) {
                     check(!ServerResolver.enabled(targetContext))
                     check(runCatching {ServerResolver.validateOrigin("http://127.0.0.1:8080")}.isFailure)
-                    click("Settings");click("Set up server");click("Copy connection status")
+                    click("Settings")
+                    val hostingLinks=mutableListOf<String>()
+                    val hostingMonitor=object:ActivityMonitor() {
+                        override fun onStartActivity(intent:android.content.Intent):ActivityResult? {
+                            if(intent.action==android.content.Intent.ACTION_VIEW) {
+                                hostingLinks.add(intent.dataString.orEmpty())
+                                return ActivityResult(Activity.RESULT_CANCELED,null)
+                            }
+                            return null
+                        }
+                    }
+                    addMonitor(hostingMonitor)
+                    try {
+                        click("1. Google Cloud Run setup")
+                        check(hostingLinks.size==1)
+                        val google=android.net.Uri.parse(hostingLinks[0])
+                        check(google.scheme=="https" && google.host=="github.com" && google.path=="/sduos4029-CODE/ytubeDownload/blob/flux/2.2.2-google-first/server/GOOGLE_CLOUD.md")
+                        click("2. Render fallback setup")
+                        check(hostingLinks.size==2)
+                        val render=android.net.Uri.parse(hostingLinks[1])
+                        check(render.scheme=="https" && render.host=="render.com" && render.path=="/deploy" && render.getQueryParameter("repo")=="https://github.com/sduos4029-CODE/ytubeDownload/tree/flux/2.2-server-preview")
+                    } finally {removeMonitor(hostingMonitor)}
+                    report("PASS: release Google-first and Render-fallback setup buttons dispatch the correct HTTPS guide and deployment links without credentials")
+                    click("Set up server");click("Copy connection status")
                     val copied=targetContext.getSystemService(android.content.ClipboardManager::class.java).primaryClip?.getItemAt(0)?.coerceToText(targetContext)?.toString().orEmpty()
                     check(copied.contains("Server saved: false") && copied.contains("Flux ${BuildConfig.VERSION_NAME}") && !copied.contains("https://"))
                     fun find(node:android.view.accessibility.AccessibilityNodeInfo?,label:String):android.view.accessibility.AccessibilityNodeInfo? {
