@@ -48,7 +48,10 @@ object ServerTransport {
             setRequestProperty("Accept","application/json")
             useCaches=false
         }
-        continuation.invokeOnCancellation {connection.disconnect()}
+        continuation.invokeOnCancellation {
+            // TLS/socket shutdown must not block the UI thread that cancels us.
+            Dispatchers.IO.dispatch(continuation.context,Runnable {runCatching {connection.disconnect()}})
+        }
         Dispatchers.IO.dispatch(continuation.context,Runnable {
             try {
                 if(!continuation.isActive)return@Runnable
@@ -80,7 +83,7 @@ object ServerTransport {
                     else -> ServerFailure(ServerIssue.Network,"Flux server network connection failed. Check its HTTPS address and hosting status.")
                 }
                 if(continuation.isActive)continuation.resumeWith(Result.failure(safe))
-            }finally {connection.disconnect()}
+            }finally {runCatching {connection.disconnect()}}
         })
     }
 }
