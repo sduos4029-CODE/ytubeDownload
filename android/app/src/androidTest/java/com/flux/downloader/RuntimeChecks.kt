@@ -303,6 +303,9 @@ class RuntimeChecks : Instrumentation() {
                         putFloat(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_PROGRESS_VALUE,2f)
                     })){"Trim end slider did not accept a new selection"}
                     Thread.sleep(300)
+                    val editorBounds=android.graphics.Rect()
+                    uiAutomation.rootInActiveWindow.getBoundsInScreen(editorBounds)
+                    check(editorBounds.width()>=targetContext.resources.displayMetrics.widthPixels*0.9){"Editor did not open full-width"}
                     click("Play selected clip")
                     var preview:android.widget.VideoView?=null
                     runOnMainSync {
@@ -315,16 +318,47 @@ class RuntimeChecks : Instrumentation() {
                     click("Play selected clip")
                     Thread.sleep(2700)
                     runOnMainSync {check(preview?.isPlaying==false && preview!!.currentPosition<=2400){"Preview did not stop at the selected end"}}
+                    fun pointer(node:android.view.accessibility.AccessibilityNodeInfo?):android.view.accessibility.AccessibilityNodeInfo? {
+                        if(node==null)return null
+                        if(node.contentDescription?.toString()=="Playback pointer" && node.rangeInfo!=null)return node
+                        for(i in 0 until node.childCount){val found=pointer(node.getChild(i));if(found!=null)return found}
+                        return null
+                    }
+                    var cursor=pointer(uiAutomation.rootInActiveWindow)
+                    val cursorDeadline=System.currentTimeMillis()+15000
+                    while(cursor==null && System.currentTimeMillis()<cursorDeadline) {
+                        fun area(node:android.view.accessibility.AccessibilityNodeInfo?):android.view.accessibility.AccessibilityNodeInfo? {
+                            if(node==null)return null
+                            if(node.isScrollable && node.rangeInfo==null)return node
+                            for(i in 0 until node.childCount){val found=area(node.getChild(i));if(found!=null)return found}
+                            return null
+                        }
+                        area(uiAutomation.rootInActiveWindow)?.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)
+                        Thread.sleep(200);cursor=pointer(uiAutomation.rootInActiveWindow)
+                    }
+                    check(cursor!=null){"Playback pointer slider unavailable"}
+                    check(cursor!!.performAction(android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS.id,Bundle().apply {
+                        putFloat(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_PROGRESS_VALUE,0.5f)
+                    }))
+                    Thread.sleep(700)
+                    runOnMainSync {check(preview?.isPlaying==false && preview!!.currentPosition in 300..900){"Playback pointer failed to seek without playing"}}
+                    report("PASS: full-window editor playback pointer seeks the source without starting playback")
                     report("PASS: release trim preview decodes the saved video, plays and pauses on request, and stops at the selection end")
                     val screenshot=uiAutomation.takeScreenshot()
                     if(screenshot!=null) {
                         java.io.File(targetContext.getExternalFilesDir(null),"media-tools-ui.png").outputStream().use {screenshot.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)};screenshot.recycle()
                     }
+                    click("Add clip");click("New clip")
+                    click("Add clip")
                     val before=Store.downloads.value.map{it.id}.toSet()
                     click("Review export");click("Create new file")
                     val queued=Store.downloads.value.single {it.id !in before}
                     check(queued.isLocalEdit && queued.state=="Paused" && queued.editOperation==EditOperation.Trim.name && queued.editEnd==2.0 && queued.editSourceUri.startsWith("content://"))
+                    val selectedClips=ClipEdits.decode(queued.editSegments)
+                    check(selectedClips.size==2 && selectedClips[0]==TrimClip(0.0,2.0) && selectedClips[1].start==0.0 && selectedClips[1].end in 6.0..6.1)
+                    check(queued.duration==9L && queued.editPreset==EditPreset.Mp4H264.name)
                     Downloads.cancel(targetContext,queued)
+                    report("PASS: full-window editor adds multiple trim selections and queues one combined MP4 in clip-list order")
                     report("PASS: release Library media-tools dialog, trim/output controls and explicit new-file confirmation queue a local job without changing the source")
                     result.putString("stream","MEDIA TOOLS UI CHECKS PASSED\n");finish(Activity.RESULT_OK,result);return
                 }
