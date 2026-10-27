@@ -53,7 +53,7 @@ object ServerTransport {
             Dispatchers.IO.dispatch(continuation.context,Runnable {runCatching {connection.disconnect()}})
         }
         Dispatchers.IO.dispatch(continuation.context,Runnable {
-            try {
+            val outcome:Result<Reply> = try {
                 if(!continuation.isActive)return@Runnable
                 if(body!=null) {
                     connection.doOutput=true
@@ -75,15 +75,17 @@ object ServerTransport {
                 val text=String(bytes,Charsets.UTF_8)
                 val json=runCatching {JSONObject(text)}.getOrNull()
                 val reply=Reply(code,json,connection.contentType.orEmpty().contains("text/html",true) || text.trimStart().startsWith("<"))
-                if(continuation.isActive)continuation.resumeWith(Result.success(reply))
+                Result.success(reply)
             }catch(error:Exception) {
                 val safe=when(error) {
                     is ServerFailure -> error
                     is javax.net.ssl.SSLException -> ServerFailure(ServerIssue.Tls,"Flux server HTTPS certificate validation failed. Check the hosting certificate.")
                     else -> ServerFailure(ServerIssue.Network,"Flux server network connection failed. Check its HTTPS address and hosting status.")
                 }
-                if(continuation.isActive)continuation.resumeWith(Result.failure(safe))
+                Result.failure(safe)
             }finally {runCatching {connection.disconnect()}}
+            // Fully release this request before a caller starts the next one.
+            if(continuation.isActive)continuation.resumeWith(outcome)
         })
     }
 }
