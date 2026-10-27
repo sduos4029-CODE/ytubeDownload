@@ -19,6 +19,9 @@ import java.util.concurrent.Executors
 
 /** Real-device integration checks. Media is generated locally; no third-party video is downloaded. */
 class RuntimeChecks : Instrumentation() {
+    private var upgradeUiOnly=false
+    private var upgradeOnly=false
+    private var upgradeRestartOnly=false
     private var serverDiagnosticsOnly = false
     private var serverUiOnly = false
     private var serverOnly = false
@@ -59,6 +62,9 @@ class RuntimeChecks : Instrumentation() {
     private var restartOnly = false
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
+        upgradeUiOnly=arguments?.getString("upgradeUiOnly")=="true"
+        upgradeOnly=arguments?.getString("upgradeOnly")=="true"
+        upgradeRestartOnly=arguments?.getString("upgradeRestartOnly")=="true"
         serverDiagnosticsOnly = arguments?.getString("serverDiagnosticsOnly") == "true"
         serverUiOnly = arguments?.getString("serverUiOnly") == "true"
         serverOnly = arguments?.getString("serverOnly") == "true"
@@ -103,6 +109,11 @@ class RuntimeChecks : Instrumentation() {
     override fun onStart() {
         val result = Bundle()
         try {
+            if(upgradeOnly || upgradeRestartOnly) {
+                runBlocking {UpgradeChecks(this@RuntimeChecks,::report).run(upgradeRestartOnly)}
+                result.putString("stream",if(upgradeRestartOnly)"UPGRADE RESTART CHECKS PASSED\n" else "UPGRADE CHECKS PASSED\n")
+                finish(Activity.RESULT_OK,result);return
+            }
             if(serverDiagnosticsOnly) {
                 runBlocking {ServerDiagnosticsChecks(this@RuntimeChecks,::report).run()}
                 result.putString("stream","SERVER DIAGNOSTICS CHECKS PASSED\n")
@@ -210,7 +221,7 @@ class RuntimeChecks : Instrumentation() {
             val activity = startActivitySync(Intent(targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
             check(!activity.isFinishing) { "Activity did not launch" }
             report("PASS: APK installs and MainActivity launches")
-            if (serverUiOnly || uiOnly || queueUiOnly || transferUiOnly || libraryUiOnly || progressUiOnly || favouritesUiOnly || repeatUiOnly || libraryToolsUiOnly || platformUiOnly || galleryUiOnly || sessionUiOnly) {
+            if (upgradeUiOnly || serverUiOnly || uiOnly || queueUiOnly || transferUiOnly || libraryUiOnly || progressUiOnly || favouritesUiOnly || repeatUiOnly || libraryToolsUiOnly || platformUiOnly || galleryUiOnly || sessionUiOnly) {
                 // UI scenarios own synthetic job states. Drain WorkManager,
                 // including requests restored after a force-stop, first.
                 Store.setQueuePaused(true)
@@ -242,6 +253,28 @@ class RuntimeChecks : Instrumentation() {
                         Thread.sleep(300)
                     }
                     error("UI control not found: $label")
+                }
+                if(upgradeUiOnly) {
+                    click("Settings");click("Save audio preference")
+                    val documents=mutableListOf<Intent>()
+                    val monitor=object:ActivityMonitor() {
+                        override fun onStartActivity(intent:Intent):ActivityResult? {
+                            if(intent.action in setOf(Intent.ACTION_CREATE_DOCUMENT,Intent.ACTION_OPEN_DOCUMENT)) {
+                                documents.add(intent);return ActivityResult(Activity.RESULT_CANCELED,null)
+                            }
+                            return null
+                        }
+                    }
+                    addMonitor(monitor)
+                    try {
+                        click("Export preferences");click("Import preferences")
+                        check(documents.size==2 && documents[0].type=="application/json" && documents[0].getStringExtra(Intent.EXTRA_TITLE)=="Flux-preferences.json")
+                        check(documents[1].action==Intent.ACTION_OPEN_DOCUMENT)
+                    }finally {removeMonitor(monitor)}
+                    click("Library");click("Collections & file tools");click("Show all collections")
+                    click("Collections & file tools");click("Close tools")
+                    report("PASS: release audio/schedule/backup settings and Library tools are reachable; export/import use Android document pickers without credential sharing")
+                    result.putString("stream","UPGRADE UI CHECKS PASSED\n");finish(Activity.RESULT_OK,result);return
                 }
                 if(serverUiOnly) {
                     check(!ServerResolver.enabled(targetContext))

@@ -11,7 +11,7 @@ import kotlinx.coroutines.sync.withLock
 import java.io.File
 
 object QueueRules {
-    val busyStates = setOf("Downloading", "Merging", "Saving", "Pausing")
+    val busyStates = setOf("Downloading", "Merging", "Saving", "Verifying", "Pausing")
     val runnableStates = setOf("Queued", "Retrying")
     const val MAX_RETRIES = 3
     fun retryDelay(retry: Int): Long = 30_000L * (1L shl (retry - 1).coerceIn(0, 2))
@@ -21,7 +21,7 @@ object QueueRules {
         return listOf("timed out", "timeout", "connection reset", "connection refused", "connection aborted", "connection closed", "remote end closed", "unable to download", "network is unreachable", "network unreachable", "temporary failure", "name or service not known", "failed to resolve", "http error 429", "http error 500", "http error 502", "http error 503", "http error 504").any { it in text }
     }
     fun next(jobs: List<Download>, now: Long): Download? = jobs.filter {
-        it.state in runnableStates && (it.state != "Retrying" || it.nextAttemptAt <= now)
+        it.state in runnableStates && it.scheduledAt<=now && (it.state != "Retrying" || it.nextAttemptAt <= now)
     }.minWithOrNull(compareBy<Download> { it.queueOrder }.thenBy { it.created }.thenBy { it.id })
 }
 
@@ -44,7 +44,7 @@ object Downloads {
         Store.init(context)
         val paused = Store.queuePaused.value
         Store.add(job.copy(state = if (paused) "Paused" else "Queued", queueOrder = Store.nextQueueOrder(),
-            detail = if (paused) "Queue paused · ready when you resume" else "Waiting in download queue"))
+            detail = if (paused) "Queue paused · ready when you resume" else if(job.scheduledAt>System.currentTimeMillis()) "Scheduled for ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(job.scheduledAt))}" else "Waiting in download queue"))
         if (!paused) kick(context)
     }
     fun downloadAgain(context: Context, sourceId: String): RepeatOutcome {
@@ -54,14 +54,29 @@ object Downloads {
         return result
     }
 
-    fun kick(context: Context) {
+    fun kick(context: Context,delayMillis:Long=0) {
         val request = OneTimeWorkRequestBuilder<DownloadWorker>()
-            .addTag(TAG).setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).build()
+            .addTag(TAG).setInitialDelay(delayMillis.coerceAtLeast(0),java.util.concurrent.TimeUnit.MILLISECONDS)
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).setRequiresCharging(UpgradeSettings.preferences.value.chargingOnly).build()).build()
         // Appending a harmless wake-up avoids KEEP's enqueue/worker-exit race.
         // A worker drains the durable queue; later wake-ups simply find it empty.
-        WorkManager.getInstance(context).enqueueUniqueWork(QUEUE, ExistingWorkPolicy.APPEND_OR_REPLACE, request)
+        if(delayMillis>0) {
+            // A future wake must never block an immediate download behind it.
+            val slot=(System.currentTimeMillis()+delayMillis)/1000
+            WorkManager.getInstance(context).enqueueUniqueWork("flux-scheduled-wake-$slot",ExistingWorkPolicy.KEEP,request)
+        }else WorkManager.getInstance(context).enqueueUniqueWork(QUEUE, ExistingWorkPolicy.APPEND_OR_REPLACE, request)
     }
 
+    fun refreshConstraints(context:Context) {
+        io.launch {
+            val manager=WorkManager.getInstance(context)
+            manager.getWorkInfosByTag(TAG).get().filter {it.state==WorkInfo.State.ENQUEUED}.forEach {info ->
+                val update=OneTimeWorkRequestBuilder<DownloadWorker>().setId(info.id).addTag(TAG)
+                    .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).setRequiresCharging(UpgradeSettings.preferences.value.chargingOnly).build()).build()
+                manager.updateWork(update).get()
+            }
+        }
+    }
     fun recover(context: Context) {
         Store.init(context)
         if (!Store.queuePaused.value && Store.downloads.value.any {
@@ -98,6 +113,10 @@ object Downloads {
         kick(context)
     }
 
+    fun startNow(context:Context,job:Download) {
+        Store.change(job.id,true) {if(it.state in QueueRules.runnableStates)it.copy(scheduledAt=0,detail="Ready now · network and power requirements still apply") else it}
+        kick(context)
+    }
     fun next(context: Context, job: Download) {
         Store.change(job.id, durable = true) {
             if (it.state in QueueRules.runnableStates) it.copy(queueOrder = Store.firstQueueOrder() - 1) else it

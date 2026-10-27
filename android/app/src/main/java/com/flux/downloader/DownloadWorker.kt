@@ -50,7 +50,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         val legacyId = inputData.getString("job")
         if (legacyId != null) {
             val job = Store.downloads.value.find { it.id == legacyId }
-            if (job != null && !Store.queuePaused.value && NetworkGate.allowed() && job.state in QueueRules.runnableStates) {
+            if (job != null && !Store.queuePaused.value && TransferGate.allowed() && job.state in QueueRules.runnableStates) {
                 DownloadTask(applicationContext, job.id, { isStopped }, { prepareForeground() }).run(job)
                 if (Store.downloads.value.find { it.id == job.id }?.state == "Retrying") Downloads.kick(applicationContext)
             }
@@ -62,12 +62,20 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 while (true) {
                     currentCoroutineContext().ensureActive()
                     active.filterValues { it.isCompleted }.keys.toList().forEach { key -> active.remove(key)?.await() }
-                    if (!Store.queuePaused.value && NetworkGate.allowed()) {
+                    if (!Store.queuePaused.value && TransferGate.allowed()) {
                         while (active.size < Store.transfers.value.parallel) {
                             val job = QueueRules.next(Store.downloads.value.filterNot { it.id in active }, System.currentTimeMillis()) ?: break
                             prepareForeground()
                             active[job.id] = async { DownloadTask(applicationContext, job.id, { isStopped }, { prepareForeground() }).run(job) }
                         }
+                    }
+                    if(active.isEmpty() && !Store.queuePaused.value) {
+                        val pending=Store.downloads.value.filter {it.state in QueueRules.runnableStates}
+                        val wake=pending.minOfOrNull {maxOf(it.scheduledAt,if(it.state=="Retrying")it.nextAttemptAt else 0)}
+                        if(wake!=null && wake>System.currentTimeMillis()) {
+                            Downloads.kick(applicationContext,wake-System.currentTimeMillis());break
+                        }
+                        if(!ChargingGate.allowed()) {Downloads.kick(applicationContext);break}
                     }
                     val waiting = Store.downloads.value.any { it.state in QueueRules.runnableStates }
                     if (active.isEmpty() && (Store.queuePaused.value || !waiting)) break
@@ -92,7 +100,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         val manager = applicationContext.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel("downloads", "Downloads", NotificationManager.IMPORTANCE_LOW))
         val open = PendingIntent.getActivity(applicationContext, 0, Intent(applicationContext, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val text = if (!NetworkGate.allowed()) "Waiting for Wi-Fi · partial data kept" else "Up to ${Store.transfers.value.parallel} simultaneous downloads"
+        val text = if (!TransferGate.allowed()) "${TransferGate.reason} · partial data kept" else "Up to ${Store.transfers.value.parallel} simultaneous downloads"
         val notice = NotificationCompat.Builder(applicationContext, "downloads").setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentTitle("Flux download queue").setContentText(text).setContentIntent(open).setOnlyAlertOnce(true)
             .setOngoing(true).setProgress(0, 0, true).build()
@@ -118,7 +126,7 @@ private class DownloadTask(
     private suspend fun checkControl() {
         currentCoroutineContext().ensureActive()
         if (isStopped) throw CancellationException("Worker interrupted")
-        if (!NetworkGate.allowed() && Store.downloads.value.find { it.id == jobId }?.state == "Downloading") {
+        if (!TransferGate.allowed() && Store.downloads.value.find { it.id == jobId }?.state == "Downloading") {
             networkInterrupted = true
             throw UserStopped()
         }
@@ -135,6 +143,7 @@ private class DownloadTask(
         try {
             checkControl()
             check(work.isDirectory || work.mkdirs()) { "Unable to prepare download storage. Check free space." }
+            StorageBudget.check(applicationContext,job.expectedBytes)
             Downloads.cleanupPending(applicationContext, Store.downloads.value.find { it.id == jobId } ?: job)
             preparing()
             Engine.initialize(applicationContext)
@@ -177,6 +186,7 @@ private class DownloadTask(
                     addOption("--audio-multistreams")
                     addOption("--postprocessor-args", "Merger+ffmpeg_o:-map -0:a? -disposition:a:0 default")
                 }
+                SubtitleTracks.apply(this,job.subtitleLanguage)
                 addOption("--output", File(work, "media.%(ext)s").absolutePath)
             }
             execute(request, job)
@@ -262,7 +272,7 @@ private class DownloadTask(
                 "Cancelled" -> it
                 "Pausing", "Paused" -> it.copy(state = "Paused", nextAttemptAt = 0, detail = "Paused · downloaded data kept")
                 "Complete" -> it
-                else -> it.copy(state = "Queued", detail = if (networkInterrupted) "Waiting for Wi-Fi · downloaded data kept" else "Interrupted · will resume when a connection is available")
+                else -> it.copy(state = "Queued", detail = if (networkInterrupted) "${TransferGate.reason} · downloaded data kept" else "Interrupted · will resume when a connection is available")
             }
         }
         val job = Store.downloads.value.find { it.id == jobId }
@@ -274,7 +284,7 @@ private class DownloadTask(
             checkControl()
             YoutubeDL.getInstance().execute(request, jobId) { _, _, line ->
                 val state = Store.downloads.value.find { it.id == jobId }?.state
-                if (!NetworkGate.allowed() && state == "Downloading") networkInterrupted = true
+                if (!TransferGate.allowed() && state == "Downloading") networkInterrupted = true
                 if (state in setOf("Pausing", "Paused", "Cancelled") || isStopped || networkInterrupted) {
                     runCatching { YoutubeDL.getInstance().destroyProcessById(jobId) }
                 } else {
@@ -306,7 +316,7 @@ private class DownloadTask(
             while (!process.isCompleted) {
                 currentCoroutineContext().ensureActive()
                 val state = Store.downloads.value.find { it.id == jobId }?.state
-                if (!NetworkGate.allowed() && state == "Downloading") networkInterrupted = true
+                if (!TransferGate.allowed() && state == "Downloading") networkInterrupted = true
                 if (state in setOf("Pausing", "Paused", "Cancelled") || networkInterrupted) {
                     runCatching { YoutubeDL.getInstance().destroyProcessById(jobId) }
                 }
@@ -394,6 +404,10 @@ private class DownloadTask(
                     }
                 } ?: error("Cannot write to the selected folder.")
             }
+            checkControl()
+            update("Verifying",0f,"Checking saved tracks and samples")
+            val verification=MediaVerification.inspect(applicationContext,target,job)
+            Store.change(jobId,true) {it.copy(verification=verification)}
             checkControl()
             if (pending && Build.VERSION.SDK_INT >= 29) applicationContext.contentResolver.update(target,
                 ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
