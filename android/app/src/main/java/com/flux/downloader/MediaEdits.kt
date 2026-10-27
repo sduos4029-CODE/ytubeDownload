@@ -119,10 +119,12 @@ object NativeMedia {
             val packages=File(context.noBackupFilesDir,"youtubedl-android/packages")
             builder.environment()["LD_LIBRARY_PATH"]="${File(packages,"ffmpeg/usr/lib")}:${File(packages,"python/usr/lib")}:${context.applicationInfo.nativeLibraryDir}"
             val process=builder.start()
+            val childPid=Regex("^Process\\[pid=(\\d+)").find(process.toString())?.groupValues?.get(1)?.toIntOrNull()
             val input=process.inputStream
             val buffer=ByteArray(8192);val pending=StringBuilder()
             fun emit(){line(pending.toString().trimEnd('\r'));pending.setLength(0)}
             try {
+                check(childPid!=null && childPid>0 && childPid!=android.os.Process.myPid()){ "This Android runtime cannot safely identify the media process." }
                 while(true) {
                     control();currentCoroutineContext().ensureActive()
                     val available=try{input.available()}catch(error:java.io.IOException){currentCoroutineContext().ensureActive();if(!process.isAlive)break else throw error}
@@ -138,7 +140,13 @@ object NativeMedia {
                 currentCoroutineContext().ensureActive();throw error
             } finally {
                 withContext(NonCancellable) {
-                    if(process.isAlive)process.destroyForcibly()
+                    if(process.isAlive) {
+                        // Android UNIXProcess inherits Process.destroyForcibly(),
+                        // which calls destroy()/SIGTERM. FFmpeg can trap that.
+                        // The PID comes only from this direct child Process.
+                        if(childPid!=null && childPid>0 && childPid!=android.os.Process.myPid())android.os.Process.killProcess(childPid)
+                        else process.destroy()
+                    }
                     process.waitFor(5,java.util.concurrent.TimeUnit.SECONDS)
                     runCatching {input.close()}
                 }
