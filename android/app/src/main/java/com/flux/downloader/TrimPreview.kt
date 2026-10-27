@@ -53,8 +53,6 @@ internal fun TrimPreview(source:Download,info:EditSource,start:String,end:String
                     seeking=false;resumeAfterSeek=false;view.start();playing=true
                 } else {seeking=false;resumeAfterSeek=false}
             }
-            // Decode a first frame without autoplay when the editor opens.
-            runCatching{media.seekTo(1L,MediaPlayer.SEEK_CLOSEST)}
         }
         view.setOnCompletionListener {playing=false;seeking=false}
         view.setOnErrorListener {_,_,_->pause();ready=false;error="Android cannot preview this format on this device. You can still export it or choose a compatible MP4 output.";true}
@@ -65,7 +63,15 @@ internal fun TrimPreview(source:Download,info:EditSource,start:String,end:String
             player?.setOnSeekCompleteListener(null);view.stopPlayback();player=null
         }
     }
-    LaunchedEffect(start,end,active){pause();position=bounds?.first?:0}
+    LaunchedEffect(start,end,active,ready) {
+        pause()
+        if(ready && active && bounds!=null) {
+            // Keep the displayed frame and pointer together when boundaries change.
+            position=position.coerceIn(bounds.first,bounds.second)
+            seeking=true
+            runCatching{player?.seekTo(position,MediaPlayer.SEEK_CLOSEST)}.onFailure{pause();error="Preview could not seek to the selected range."}
+        }
+    }
     LaunchedEffect(playing,bounds) {
         while(playing) {
             position=runCatching{view.currentPosition.toLong()}.getOrDefault(0)
