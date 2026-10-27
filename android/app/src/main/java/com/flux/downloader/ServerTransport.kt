@@ -50,11 +50,15 @@ object ServerTransport {
         }
         continuation.invokeOnCancellation {
             // TLS/socket shutdown must not block the UI thread that cancels us.
-            Dispatchers.IO.dispatch(continuation.context,Runnable {runCatching {connection.disconnect()}})
+            Dispatchers.IO.dispatch(continuation.context,object:Runnable {
+                override fun run() {runCatching {connection.disconnect()}}
+            })
         }
-        Dispatchers.IO.dispatch(continuation.context,Runnable {
+        // Explicit Runnable avoids a Kotlin 2.0 SAM-analysis loop with try/finally.
+        Dispatchers.IO.dispatch(continuation.context,object:Runnable {
+            override fun run() {
+            if(!continuation.isActive)return
             val outcome:Result<Reply> = try {
-                if(!continuation.isActive)return@Runnable
                 if(body!=null) {
                     connection.doOutput=true
                     connection.setRequestProperty("Content-Type","application/json")
@@ -86,6 +90,7 @@ object ServerTransport {
             }finally {runCatching {connection.disconnect()}}
             // Fully release this request before a caller starts the next one.
             if(continuation.isActive)continuation.resumeWith(outcome)
+            }
         })
     }
 }
