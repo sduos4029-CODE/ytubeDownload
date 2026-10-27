@@ -13,6 +13,13 @@ import kotlinx.coroutines.delay
 
 @Composable
 fun ProgressPanel(job: Download) {
+    if(job.isLocalEdit) {
+        Text("Local media · original file kept",style=MaterialTheme.typography.bodySmall,modifier=Modifier.padding(top=10.dp))
+        if(job.state=="Saving" || (job.state=="Editing" && job.progress>0 && job.duration>0))LinearProgressIndicator(progress={(job.progress/100).coerceIn(0f,1f)},modifier=Modifier.fillMaxWidth().padding(top=8.dp))
+        else if(job.state in QueueRules.busyStates)LinearProgressIndicator(Modifier.fillMaxWidth().padding(top=8.dp))
+        if(job.state=="Editing")Text("Time remaining unavailable",style=MaterialTheme.typography.bodySmall)
+        return
+    }
     val live by TransferProgress.live.collectAsState()
     var now by remember { mutableStateOf(SystemClock.elapsedRealtime()) }
     LaunchedEffect(job.id, job.state) {
