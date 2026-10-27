@@ -7,6 +7,13 @@ No Instagram login, session cookies, scraping-provider secrets or account harves
 are implemented. Only public post/Reel URLs are accepted; profiles and Threads are
 not supported. Version 1 exposes direct HTTPS media formats, not manifests.
 
+## Hosting preference
+
+1. **Google Cloud Run** — [deployment instructions](GOOGLE_CLOUD.md).
+2. **Render** — [fallback setup](../HOSTING.md#second-choice-render-personal-preview).
+
+Both require an owner-controlled account and a separate live Reel test.
+
 ## Deploy on your own host
 
 Use a host capable of running a long-lived Python 3.12 process or Docker container.

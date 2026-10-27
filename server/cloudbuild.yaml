@@ -1,0 +1,6 @@
+# Run from the repository root with --substitutions=_IMAGE=REGISTRY/IMAGE:TAG.
+# Build and publish only; this configuration does not deploy or read app secrets.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: ['build', '-f', 'server/Dockerfile', '-t', '${_IMAGE}', '.']
+images: ['${_IMAGE}']
