@@ -32,7 +32,7 @@ fun MediaToolsDialog(source:Download,onDismiss:()->Unit,onQueued:()->Unit) {
     val available=info?.let{MediaEdits.presets(it,operation)}.orEmpty()
     LaunchedEffect(operation,info){if(preset !in available && available.isNotEmpty())preset=available.first()}
     val valid=info!=null && encoders!=null && preset in available && preset.encoders.all{it in encoders.orEmpty()}
-    if(confirm!=null)AlertDialog(onDismissRequest={if(!busy)confirm=null},title={Text("Create a new media file?")},text={Text("${operation.label}\n${preset.label}\n${if(preset.copies)"Stream copying keeps the source encoding." else quality.label+" · re-encoding can lose quality."}\nThe original stays unchanged. Exports use the current download folder and appear in Library.")},
+    if(confirm!=null)AlertDialog(onDismissRequest={if(!busy)confirm=null},title={Text("Create a new media file?")},text={Text("${operation.label}\n${preset.label}\n${if(preset.copies)"Stream copying keeps the source encoding." else if(preset==EditPreset.Flac)"FLAC storage cannot restore detail lost in the source." else if(preset==EditPreset.Wav)"16-bit PCM output may reduce precision from higher-bit-depth sources." else quality.label+" · re-encoding can lose quality."}\nThe original stays unchanged. Exports use the current download folder and appear in Library.")},
         confirmButton={TextButton(enabled=!busy,onClick={busy=true;val job=confirm!!;scope.launch{
             try {withContext(Dispatchers.IO){MediaEdits.enqueue(context,job)};confirm=null;onQueued()}
             catch(e:CancellationException){throw e}catch(e:Exception){message=e.message?:"Unable to queue this export.";confirm=null}finally{busy=false}

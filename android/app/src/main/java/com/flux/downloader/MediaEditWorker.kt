@@ -90,7 +90,7 @@ class MediaEditWorker(context:Context,params:WorkerParameters):CoroutineWorker(c
             MediaVerification.inspect(applicationContext,Uri.fromFile(output),job)
             val result=publish(output,job,preset,::update)
             control(job.id)
-            check(Store.finishDownload(job.id,result.toString(),preset.mime,output.length(),if(preset.copies)"Original source streams copied" else "${preset.label} · ${EditQuality.valueOf(job.editQuality).label}")){"Export was stopped before completion."}
+            check(Store.finishDownload(job.id,result.toString(),preset.mime,output.length(),if(preset.copies)"Original source streams copied" else if(preset in setOf(EditPreset.Flac,EditPreset.Wav))preset.label else "${preset.label} · ${EditQuality.valueOf(job.editQuality).label}")){"Export was stopped before completion."}
         }catch(e:CancellationException) {
             settle(job.id);throw e
         }catch(e:Exception) {
