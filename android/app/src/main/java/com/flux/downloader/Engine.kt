@@ -312,7 +312,8 @@ object Store {
         if (job.state in setOf("Pausing", "Paused", "Cancelled")) return false
         mutable.value = mutable.value.map { if (it.id == id) it.copy(state = "Complete", progress = 100f,
             detail = "Saved · ${sizeLabel(bytes)}", uri = uri, mime = mime, bytes = bytes,
-            audioDescription = audio.ifBlank { it.audioDescription }, pendingUri = "", nextAttemptAt = 0) else it }
+            audioDescription = audio.ifBlank { it.audioDescription }, pendingUri = "", nextAttemptAt = 0,
+            editSourceFolder=if(it.isLocalEdit)"" else it.editSourceFolder) else it }
         save(true)
         return true
     }

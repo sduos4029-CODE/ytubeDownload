@@ -87,10 +87,9 @@ class MediaEditWorker(context:Context,params:WorkerParameters):CoroutineWorker(c
             }
             control(job.id);require(output.isFile && output.length()>0){"No edited media file was produced."}
             update("Verifying",0f,"Checking exported tracks and samples")
-            val checked=MediaVerification.inspect(applicationContext,Uri.fromFile(output),job)
+            MediaVerification.inspect(applicationContext,Uri.fromFile(output),job)
             val result=publish(output,job,preset,::update)
             control(job.id)
-            Store.change(job.id,true){it.copy(verification=checked,editSourceFolder="")}
             check(Store.finishDownload(job.id,result.toString(),preset.mime,output.length(),if(preset.copies)"Original source streams copied" else "${preset.label} · ${EditQuality.valueOf(job.editQuality).label}")){"Export was stopped before completion."}
         }catch(e:CancellationException) {
             settle(job.id);throw e
