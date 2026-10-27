@@ -80,6 +80,7 @@ fun QueuePage(jobs: List<Download>) {
                         if (job.state == "Saving") Text("${job.progress.toInt()}%", color = colors.onSurfaceVariant, fontSize = 11.sp)
                     }
                     ProgressPanel(job)
+                    if(job.isLocalEdit)Text("Local export · pause/interruption restarts this edit; original stays unchanged.",fontSize=10.sp,color=colors.onSurfaceVariant)
                     Text(job.detail, color = colors.onSurfaceVariant, fontSize = 11.sp, lineHeight = 16.sp, modifier = Modifier.padding(top = 10.dp))
                     if (job.audioDescription.isNotBlank()) Text("Audio: ${job.audioDescription}", color = colors.secondary,
                         fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 7.dp))

@@ -11,7 +11,7 @@ import kotlinx.coroutines.sync.withLock
 import java.io.File
 
 object QueueRules {
-    val busyStates = setOf("Downloading", "Merging", "Saving", "Verifying", "Pausing")
+    val busyStates = setOf("Downloading", "Merging", "Saving", "Verifying", "Editing", "Pausing")
     val runnableStates = setOf("Queued", "Retrying")
     const val MAX_RETRIES = 3
     fun retryDelay(retry: Int): Long = 30_000L * (1L shl (retry - 1).coerceIn(0, 2))
@@ -21,7 +21,7 @@ object QueueRules {
         return listOf("timed out", "timeout", "connection reset", "connection refused", "connection aborted", "connection closed", "remote end closed", "unable to download", "network is unreachable", "network unreachable", "temporary failure", "name or service not known", "failed to resolve", "http error 429", "http error 500", "http error 502", "http error 503", "http error 504").any { it in text }
     }
     fun next(jobs: List<Download>, now: Long): Download? = jobs.filter {
-        it.state in runnableStates && it.scheduledAt<=now && (it.state != "Retrying" || it.nextAttemptAt <= now)
+        !it.isLocalEdit && it.state in runnableStates && it.scheduledAt<=now && (it.state != "Retrying" || it.nextAttemptAt <= now)
     }.minWithOrNull(compareBy<Download> { it.queueOrder }.thenBy { it.created }.thenBy { it.id })
 }
 
@@ -42,6 +42,7 @@ object Downloads {
 
     fun enqueue(context: Context, job: Download) {
         Store.init(context)
+        if(job.isLocalEdit){MediaEdits.enqueue(context,job);return}
         val paused = Store.queuePaused.value
         Store.add(job.copy(state = if (paused) "Paused" else "Queued", queueOrder = Store.nextQueueOrder(),
             detail = if (paused) "Queue paused · ready when you resume" else if(job.scheduledAt>System.currentTimeMillis()) "Scheduled for ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(job.scheduledAt))}" else "Waiting in download queue"))
@@ -79,8 +80,9 @@ object Downloads {
     }
     fun recover(context: Context) {
         Store.init(context)
+        if(!Store.queuePaused.value && Store.downloads.value.any {it.isLocalEdit && it.state in QueueRules.runnableStates+QueueRules.busyStates})MediaEdits.kick(context)
         if (!Store.queuePaused.value && Store.downloads.value.any {
-                it.state in QueueRules.runnableStates || it.state in QueueRules.busyStates
+                !it.isLocalEdit && (it.state in QueueRules.runnableStates || it.state in QueueRules.busyStates)
             }) kick(context)
     }
 
@@ -102,7 +104,7 @@ object Downloads {
             it.copy(state = "Queued", detail = "Waiting to resume · source support required", nextAttemptAt = 0,
                 retryCount = 0, uri = "", bytes = 0)
         }
-        kick(context)
+        if(current.isLocalEdit)MediaEdits.kick(context) else kick(context)
     }
 
     fun retryNow(context: Context, job: Download) {
@@ -121,7 +123,7 @@ object Downloads {
         Store.change(job.id, durable = true) {
             if (it.state in QueueRules.runnableStates) it.copy(queueOrder = Store.firstQueueOrder() - 1) else it
         }
-        kick(context)
+        if(job.isLocalEdit)MediaEdits.kick(context) else kick(context)
     }
 
     fun cancel(context: Context, job: Download) {
@@ -155,7 +157,7 @@ object Downloads {
         Store.downloads.value.filter { it.state == "Paused" }.forEach { job ->
             Store.change(job.id, durable = true) { it.copy(state = "Queued", nextAttemptAt = 0, detail = "Waiting in download queue") }
         }
-        kick(context)
+        kick(context);MediaEdits.kick(context)
     }
 
     fun cancelAll(context: Context) {

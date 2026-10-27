@@ -61,6 +61,7 @@ fun LibraryPage(jobs: List<Download>, onRetry: (Download) -> Unit, onDownloadAga
     var favouritesOnly by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf(LibraryStatus.All) }
     var statusMenu by remember { mutableStateOf(false) }
+    var toolsId by remember {mutableStateOf<String?>(null)}
     var detailsId by remember { mutableStateOf<String?>(null) }
     var repeatId by remember { mutableStateOf<String?>(null) }
     var selecting by remember { mutableStateOf(false) }
@@ -70,6 +71,7 @@ fun LibraryPage(jobs: List<Download>, onRetry: (Download) -> Unit, onDownloadAga
     val scope = rememberCoroutineScope()
     val shown = remember(jobs, query, kind, prefs.sort, favouritesOnly, status,collectionFilter) { libraryJobs(jobs, query, kind, prefs.sort, favouritesOnly, status).filter {collectionFilter.isBlank() || it.collection==collectionFilter} }
     val context = LocalContext.current
+    jobs.find {it.id==toolsId}?.let {source->MediaToolsDialog(source,onDismiss={toolsId=null},onQueued={toolsId=null;onShowDownloads()})}
     jobs.find { it.id == detailsId }?.let { job -> LibraryDetailsDialog(job,
         onDownloadAgain = { detailsId = null; repeatId = job.id }, onDismiss = { detailsId = null }) }
     jobs.find { it.id == repeatId }?.let { job -> RepeatDownloadDialog(job,
@@ -246,7 +248,7 @@ fun LibraryPage(jobs: List<Download>, onRetry: (Download) -> Unit, onDownloadAga
             }
         }
         items(shown, key = { it.id }) { job -> LibraryCard(job, prefs, onRetry, selecting, job.id in selected,
-            busy, { toggle(job) }, { share(listOf(job)) }, { favourite(job) }, { detailsId = job.id }, { repeatId = job.id }) }
+            busy, { toggle(job) }, { share(listOf(job)) }, { favourite(job) }, { detailsId = job.id }, { repeatId = job.id },{toolsId=job.id}) }
         item(span = { GridItemSpan(maxLineSpan) }) { Spacer(Modifier.height(8.dp)) }
     }
     }
@@ -255,7 +257,7 @@ fun LibraryPage(jobs: List<Download>, onRetry: (Download) -> Unit, onDownloadAga
 @Composable
 private fun LibraryCard(job: Download, prefs: LibraryPreferences, onRetry: (Download) -> Unit,
     selecting: Boolean, selected: Boolean, busy: Boolean, onSelect: () -> Unit, onShare: () -> Unit,
-    onFavourite: () -> Unit, onDetails: () -> Unit, onDownloadAgain: () -> Unit) {
+    onFavourite: () -> Unit, onDetails: () -> Unit, onDownloadAgain: () -> Unit,onMediaTools:()->Unit) {
     val colors = MaterialTheme.colorScheme
     val context = LocalContext.current
     val compact = prefs.layout == LibraryLayout.Compact
@@ -270,6 +272,7 @@ private fun LibraryCard(job: Download, prefs: LibraryPreferences, onRetry: (Down
                 if (job.state == "Complete" && job.uri.isNotBlank()) DropdownMenuItem(
                     text = { Text(if (job.favourite) "Remove from favourites" else "Add to favourites") },
                     onClick = { actions = false; onFavourite() }, leadingIcon = { Icon(Icons.Rounded.Favorite, null) })
+                if(job.state=="Complete" && job.uri.isNotBlank() && !job.isPhoto)DropdownMenuItem(text={Text("Media tools")},onClick={actions=false;onMediaTools()},leadingIcon={Icon(Icons.Rounded.ContentCut,null)})
                 DropdownMenuItem(text = { Text("File details") }, onClick = { actions = false; onDetails() }, leadingIcon = { Icon(Icons.Rounded.Info, null) })
                 if (job.state == "Complete" && RepeatDownloads.sourceKey(job.url) != null) DropdownMenuItem(
                     text = { Text("Download again") }, onClick = { actions = false; onDownloadAgain() }, leadingIcon = { Icon(Icons.Rounded.Download, null) })

@@ -19,6 +19,9 @@ import java.util.concurrent.Executors
 
 /** Real-device integration checks. Media is generated locally; no third-party video is downloaded. */
 class RuntimeChecks : Instrumentation() {
+    private var mediaToolsOnly=false
+    private var mediaToolsRestartOnly=false
+    private var mediaToolsUiOnly=false
     private var upgradeUiOnly=false
     private var upgradeOnly=false
     private var upgradeRestartOnly=false
@@ -62,6 +65,9 @@ class RuntimeChecks : Instrumentation() {
     private var restartOnly = false
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
+        mediaToolsOnly=arguments?.getString("mediaToolsOnly")=="true"
+        mediaToolsRestartOnly=arguments?.getString("mediaToolsRestartOnly")=="true"
+        mediaToolsUiOnly=arguments?.getString("mediaToolsUiOnly")=="true"
         upgradeUiOnly=arguments?.getString("upgradeUiOnly")=="true"
         upgradeOnly=arguments?.getString("upgradeOnly")=="true"
         upgradeRestartOnly=arguments?.getString("upgradeRestartOnly")=="true"
@@ -109,6 +115,11 @@ class RuntimeChecks : Instrumentation() {
     override fun onStart() {
         val result = Bundle()
         try {
+            if(mediaToolsOnly || mediaToolsRestartOnly) {
+                runBlocking {MediaToolsChecks(this@RuntimeChecks,::report).run(mediaToolsRestartOnly)}
+                result.putString("stream",if(mediaToolsRestartOnly)"MEDIA TOOLS RESTART CHECKS PASSED\n" else "MEDIA TOOLS CHECKS PASSED\n")
+                finish(Activity.RESULT_OK,result);return
+            }
             if(upgradeOnly || upgradeRestartOnly) {
                 runBlocking {UpgradeChecks(this@RuntimeChecks,::report).run(upgradeRestartOnly)}
                 result.putString("stream",if(upgradeRestartOnly)"UPGRADE RESTART CHECKS PASSED\n" else "UPGRADE CHECKS PASSED\n")
@@ -221,7 +232,7 @@ class RuntimeChecks : Instrumentation() {
             val activity = startActivitySync(Intent(targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
             check(!activity.isFinishing) { "Activity did not launch" }
             report("PASS: APK installs and MainActivity launches")
-            if (upgradeUiOnly || serverUiOnly || uiOnly || queueUiOnly || transferUiOnly || libraryUiOnly || progressUiOnly || favouritesUiOnly || repeatUiOnly || libraryToolsUiOnly || platformUiOnly || galleryUiOnly || sessionUiOnly) {
+            if (mediaToolsUiOnly || upgradeUiOnly || serverUiOnly || uiOnly || queueUiOnly || transferUiOnly || libraryUiOnly || progressUiOnly || favouritesUiOnly || repeatUiOnly || libraryToolsUiOnly || platformUiOnly || galleryUiOnly || sessionUiOnly) {
                 // UI scenarios own synthetic job states. Drain WorkManager,
                 // including requests restored after a force-stop, first.
                 Store.setQueuePaused(true)
@@ -253,6 +264,21 @@ class RuntimeChecks : Instrumentation() {
                         Thread.sleep(300)
                     }
                     error("UI control not found: $label")
+                }
+                if(mediaToolsUiOnly) {
+                    Store.setLibrary(LibraryPreferences(LibraryLayout.List,LibrarySize.Small,LibrarySort.Title))
+                    click("Library");click("More actions for Flux media tools source");click("Media tools")
+                    val screenshot=uiAutomation.takeScreenshot()
+                    if(screenshot!=null) {
+                        java.io.File(targetContext.getExternalFilesDir(null),"media-tools-ui.png").outputStream().use {screenshot.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)};screenshot.recycle()
+                    }
+                    val before=Store.downloads.value.map{it.id}.toSet()
+                    click("Review export");click("Create new file")
+                    val queued=Store.downloads.value.single {it.id !in before}
+                    check(queued.isLocalEdit && queued.state=="Paused" && queued.editOperation==EditOperation.Trim.name && queued.editSourceUri.startsWith("content://"))
+                    Downloads.cancel(targetContext,queued)
+                    report("PASS: release Library media-tools dialog, trim/output controls and explicit new-file confirmation queue a local job without changing the source")
+                    result.putString("stream","MEDIA TOOLS UI CHECKS PASSED\n");finish(Activity.RESULT_OK,result);return
                 }
                 if(upgradeUiOnly) {
                     click("Settings");click("Save audio preference")

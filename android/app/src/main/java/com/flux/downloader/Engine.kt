@@ -189,8 +189,11 @@ data class Download(
     val pendingUri: String = "", val favourite: Boolean = false,
     val mediaKind: String = "video", val mediaId: String = "",
     val scheduledAt:Long=0, val expectedBytes:Long=0, val expectsAudio:Boolean=false,
-    val subtitleLanguage:String="", val verification:String="", val collection:String="", val tags:String=""
+    val subtitleLanguage:String="", val verification:String="", val collection:String="", val tags:String="",
+    val editOperation:String="",val editPreset:String="",val editQuality:String="",val editSourceUri:String="",val editSourceFolder:String="",
+    val editStart:Double=0.0,val editEnd:Double=0.0
 ) {
+    val isLocalEdit get()=editOperation.isNotBlank()
     val isPhoto get() = mediaKind == "photo" || mime.startsWith("image/")
     val terminal get() = state in listOf("Complete", "Failed", "Cancelled")
     fun json() = JSONObject().apply {
@@ -204,6 +207,8 @@ data class Download(
         put("favourite", favourite); put("mediaKind",mediaKind); put("mediaId",mediaId)
         put("scheduledAt",scheduledAt);put("expectedBytes",expectedBytes);put("expectsAudio",expectsAudio);put("subtitleLanguage",subtitleLanguage)
         put("verification",verification);put("collection",collection);put("tags",tags)
+        put("editOperation",editOperation);put("editPreset",editPreset);put("editQuality",editQuality);put("editSourceUri",editSourceUri);put("editSourceFolder",editSourceFolder)
+        put("editStart",editStart);put("editEnd",editEnd)
     }
     companion object {
         fun from(o: JSONObject) = Download(o.getString("id"), o.getString("url"), o.getString("title"),
@@ -213,7 +218,9 @@ data class Download(
             o.optBoolean("replaceEmbeddedAudio", false), o.optString("audioDescription", ""), o.optLong("bytes", 0),
             o.optLong("queueOrder", o.optLong("created")), o.optInt("retryCount", 0), o.optLong("nextAttemptAt", 0), o.optString("pendingUri", ""), o.optBoolean("favourite", false), o.optString("mediaKind","video"), o.optString("mediaId",""),
             o.optLong("scheduledAt",0).coerceAtLeast(0),o.optLong("expectedBytes",0).coerceAtLeast(0),o.optBoolean("expectsAudio",false),
-            o.optString("subtitleLanguage",""),o.optString("verification",""),o.optString("collection",""),o.optString("tags",""))
+            o.optString("subtitleLanguage",""),o.optString("verification",""),o.optString("collection",""),o.optString("tags",""),
+            o.optString("editOperation",""),o.optString("editPreset",""),o.optString("editQuality",""),o.optString("editSourceUri",""),o.optString("editSourceFolder",""),
+            o.optDouble("editStart",0.0),o.optDouble("editEnd",0.0))
     }
 }
 
@@ -320,7 +327,7 @@ object Store {
         releaseUnusedFolders()
     }
     @Synchronized fun releaseUnusedFolders() {
-        val required = mutable.value.filter { !it.terminal || it.pendingUri.isNotBlank() || (it.state == "Complete" && it.uri.isNotBlank()) }.map { it.folder }.toSet() + folder.value + workingFolders.values
+        val required = mutable.value.filter { !it.terminal || it.pendingUri.isNotBlank() || (it.state == "Complete" && it.uri.isNotBlank()) }.map { it.folder }.toSet() + mutable.value.filter {it.isLocalEdit && it.state !in setOf("Complete","Cancelled")}.map {it.editSourceFolder} + folder.value + workingFolders.values
         appContext.contentResolver.persistedUriPermissions.filter { it.uri.toString() !in required }.forEach { permission ->
             val flags = (if (permission.isReadPermission) android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION else 0) or
                 (if (permission.isWritePermission) android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0)

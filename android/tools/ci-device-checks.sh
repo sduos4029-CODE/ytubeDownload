@@ -23,12 +23,17 @@ check() {
 check upgradeOnly 'UPGRADE CHECKS PASSED'
 adb shell am force-stop com.flux.downloader
 check upgradeRestartOnly 'UPGRADE RESTART CHECKS PASSED'
+check mediaToolsOnly 'MEDIA TOOLS CHECKS PASSED'
+adb shell am force-stop com.flux.downloader
+check mediaToolsRestartOnly 'MEDIA TOOLS RESTART CHECKS PASSED'
 check serverDiagnosticsOnly 'SERVER DIAGNOSTICS CHECKS PASSED'
 check serverOnly 'SERVER RESOLVER CHECKS PASSED'
 "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks "$ANDROID_USER_HOME/debug.keystore" --ks-key-alias androiddebugkey --ks-pass pass:android --key-pass pass:android --out "$RUNNER_TEMP/flux-release-ui.apk" app/build/outputs/apk/release/app-release-unsigned.apk
 adb install -r "$RUNNER_TEMP/flux-release-ui.apk"
 check serverUiOnly 'SERVER UI CHECKS PASSED'
 check upgradeUiOnly 'UPGRADE UI CHECKS PASSED'
+check mediaToolsUiOnly 'MEDIA TOOLS UI CHECKS PASSED'
+adb pull /sdcard/Android/data/com.flux.downloader/files/media-tools-ui.png test-results/media-tools-ui.png || true
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 check sessionOnly 'SESSION CHECKS PASSED'
 adb shell am force-stop com.flux.downloader

@@ -77,6 +77,7 @@ fun LibraryDetailsDialog(job: Download, onDownloadAgain: () -> Unit, onDismiss: 
             if (job.bytes > 0) Text("Recorded size: ${sizeLabel(job.bytes)}")
             Text("Saved format: ${job.mime.ifBlank { "Not reported" }}")
             Text("Quality: ${job.label}")
+            if(job.isLocalEdit)Text("Created locally: ${job.editOperation} · original file kept")
             Text("Verification: ${job.verification.ifBlank {"Not checked by this version"}}")
             Text("Track checks do not guarantee playback on every decoder.")
             if(job.collection.isNotBlank())Text("Collection: ${job.collection}")

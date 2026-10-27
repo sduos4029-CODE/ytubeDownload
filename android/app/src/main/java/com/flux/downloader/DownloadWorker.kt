@@ -41,7 +41,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         Store.init(applicationContext)
         // Only one scheduler owns the queue. Independent item tasks provide
         // bounded parallelism without sharing process IDs or output files.
-        Store.downloads.value.filter { it.state in QueueRules.busyStates }.forEach { old ->
+        Store.downloads.value.filter { !it.isLocalEdit && it.state in QueueRules.busyStates }.forEach { old ->
             Store.change(old.id, durable = true) {
                 if (it.state == "Pausing") it.copy(state = "Paused", detail = "Paused · downloaded data kept")
                 else it.copy(state = "Queued", detail = "Recovering interrupted download")
@@ -50,7 +50,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         val legacyId = inputData.getString("job")
         if (legacyId != null) {
             val job = Store.downloads.value.find { it.id == legacyId }
-            if (job != null && !Store.queuePaused.value && TransferGate.allowed() && job.state in QueueRules.runnableStates) {
+            if (job != null && !job.isLocalEdit && !Store.queuePaused.value && TransferGate.allowed() && job.state in QueueRules.runnableStates) {
                 DownloadTask(applicationContext, job.id, { isStopped }, { prepareForeground() }).run(job)
                 if (Store.downloads.value.find { it.id == job.id }?.state == "Retrying") Downloads.kick(applicationContext)
             }
@@ -70,14 +70,14 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
                         }
                     }
                     if(active.isEmpty() && !Store.queuePaused.value) {
-                        val pending=Store.downloads.value.filter {it.state in QueueRules.runnableStates}
+                        val pending=Store.downloads.value.filter {!it.isLocalEdit && it.state in QueueRules.runnableStates}
                         val wake=pending.minOfOrNull {maxOf(it.scheduledAt,if(it.state=="Retrying")it.nextAttemptAt else 0)}
                         if(wake!=null && wake>System.currentTimeMillis()) {
                             Downloads.kick(applicationContext,wake-System.currentTimeMillis());break
                         }
                         if(!ChargingGate.allowed()) {Downloads.kick(applicationContext);break}
                     }
-                    val waiting = Store.downloads.value.any { it.state in QueueRules.runnableStates }
+                    val waiting = Store.downloads.value.any { !it.isLocalEdit && it.state in QueueRules.runnableStates }
                     if (active.isEmpty() && (Store.queuePaused.value || !waiting)) break
                     if (active.isEmpty()) prepareForeground()
                     delay(400)
