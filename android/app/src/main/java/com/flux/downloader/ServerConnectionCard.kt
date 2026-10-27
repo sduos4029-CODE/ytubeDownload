@@ -7,11 +7,13 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.*
 
@@ -72,7 +74,7 @@ fun ServerConnectionCard() {
             }) {Text("Copy connection status")}
             if(editing) {
                 OutlinedTextField(value=address,onValueChange={address=it},label={Text("Server HTTPS address")},singleLine=true,enabled=!busy,modifier=Modifier.fillMaxWidth())
-                OutlinedTextField(value=token,onValueChange={token=it},label={Text("Server access key")},singleLine=true,visualTransformation=PasswordVisualTransformation(),enabled=!busy,modifier=Modifier.fillMaxWidth())
+                OutlinedTextField(value=token,onValueChange={token=it},label={Text("Server access key")},singleLine=true,visualTransformation=PasswordVisualTransformation(),keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Password),enabled=!busy,modifier=Modifier.fillMaxWidth())
                 Button(enabled=!busy && address.isNotBlank() && token.isNotBlank(),onClick={check(true)}) {Text("Verify and connect")}
             }
             if(saved)TextButton(enabled=!busy,onClick={ServerResolver.clear(context);token="";message="Server disconnected. New requests use direct retrieval."}) {Text("Disconnect server")}
