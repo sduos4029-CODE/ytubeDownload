@@ -361,7 +361,16 @@ class RuntimeChecks : Instrumentation() {
                         java.io.File(targetContext.getExternalFilesDir(null),"media-tools-ui.png").outputStream().use {screenshot.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)};screenshot.recycle()
                     }
                     click("Add clip");click("Add clip")
+                    fun editLabel(node:android.view.accessibility.AccessibilityNodeInfo?):String? {
+                        if(node==null)return null
+                        val text=node.text?.toString()
+                        if(text?.startsWith("Clip 1 · 0.000 → ")==true)return text
+                        for(i in 0 until node.childCount){val found=editLabel(node.getChild(i));if(found!=null)return found}
+                        return null
+                    }
                     click("Edit clip 1")
+                    val savedLabel=editLabel(uiAutomation.rootInActiveWindow) ?: error("Saved clip range unavailable")
+                    val savedBoundary=savedLabel.substringAfter(" → ").toDouble()
                     val editCursor=pointer(uiAutomation.rootInActiveWindow) ?: error("Edit pointer unavailable")
                     check(editCursor.performAction(android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS.id,Bundle().apply {
                         putFloat(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_PROGRESS_VALUE,1f)
@@ -369,15 +378,18 @@ class RuntimeChecks : Instrumentation() {
                     Thread.sleep(700);click("Set end here");click("Cancel clip edit")
                     click("Remove clip 1");click("Undo removal")
                     click("Edit clip 1")
-                    check(uiAutomation.rootInActiveWindow.findAccessibilityNodeInfosByText("Clip 1 · 0.000 → 2.000").isNotEmpty()) {"Cancel edit changed the saved clip"}
+                    val restoredLabel=editLabel(uiAutomation.rootInActiveWindow)
+                    check(restoredLabel==savedLabel){"Cancel/Undo changed the saved clip: $savedLabel -> $restoredLabel"}
+                    var savedPointer=0.0
+                    runOnMainSync{savedPointer=preview!!.currentPosition/1000.0}
                     click("Set end here");click("Save clip")
                     val before=Store.downloads.value.map{it.id}.toSet()
                     click("Review export");click("Create new file")
                     val queued=Store.downloads.value.single {it.id !in before}
-                    check(queued.isLocalEdit && queued.state=="Paused" && queued.editOperation==EditOperation.Trim.name && queued.editEnd==1.0 && queued.editSourceUri.startsWith("content://"))
+                    check(queued.isLocalEdit && queued.state=="Paused" && queued.editOperation==EditOperation.Trim.name && kotlin.math.abs(queued.editEnd-savedPointer)<0.002 && queued.editSourceUri.startsWith("content://"))
                     val selectedClips=ClipEdits.decode(queued.editSegments)
-                    check(selectedClips.size==2 && selectedClips[0]==TrimClip(0.0,1.0) && selectedClips[1].start==2.0 && selectedClips[1].end in 6.0..6.1)
-                    check(queued.duration==6L && queued.editPreset==EditPreset.Mp4H264.name)
+                    check(selectedClips.size==2 && selectedClips[0].start==0.0 && selectedClips[0].end in 0.9..1.1 && selectedClips[1].start==savedBoundary && selectedClips[1].end in 6.0..6.1)
+                    check(queued.duration==kotlin.math.ceil(selectedClips.sumOf{it.seconds}).toLong() && queued.editPreset==EditPreset.Mp4H264.name)
                     Downloads.cancel(targetContext,queued)
                     report("PASS: full-window editor adds multiple trim selections and queues one combined MP4 in clip-list order; automatic next range, cancel edit and undo removal preserve saved clips")
                     report("PASS: release Library media-tools dialog, trim/output controls and explicit new-file confirmation queue a local job without changing the source")
