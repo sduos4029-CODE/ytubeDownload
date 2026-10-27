@@ -25,13 +25,13 @@ fun MediaToolsDialog(source:Download,onDismiss:()->Unit,onQueued:()->Unit) {
     LaunchedEffect(source.id) {
         try {
             val data=withContext(Dispatchers.IO){MediaEdits.probe(context,source)};info=data
-            if(end.isBlank() && data.seconds>0)end=String.format(java.util.Locale.US,"%.3f",data.seconds)
+            if(data.seconds>0)end=trimTime(kotlin.math.floor(data.seconds*1000)/1000)
             encoders=NativeMedia.encoders(context)
         }catch(e:CancellationException){throw e}catch(e:Exception){message=e.message?:"Unable to inspect this file."}
     }
     val available=info?.let{MediaEdits.presets(it,operation)}.orEmpty()
     LaunchedEffect(operation,info){if(preset !in available && available.isNotEmpty())preset=available.first()}
-    val valid=info!=null && encoders!=null && preset in available && preset.encoders.all{it in encoders.orEmpty()}
+    val valid=info!=null && (operation!=EditOperation.Trim || trimBounds(start,end,info?.seconds?:0.0)!=null) && encoders!=null && preset in available && preset.encoders.all{it in encoders.orEmpty()}
     if(confirm!=null)AlertDialog(onDismissRequest={if(!busy)confirm=null},title={Text("Create a new media file?")},text={Text("${operation.label}\n${preset.label}\n${if(preset.copies)"Stream copying keeps the source encoding." else if(preset==EditPreset.Flac)"FLAC storage cannot restore detail lost in the source." else if(preset==EditPreset.Wav)"16-bit PCM output may reduce precision from higher-bit-depth sources." else quality.label+" · re-encoding can lose quality."}\nThe original stays unchanged. Exports use the current download folder and appear in Library.")},
         confirmButton={TextButton(enabled=!busy,onClick={busy=true;val job=confirm!!;scope.launch{
             try {withContext(Dispatchers.IO){MediaEdits.enqueue(context,job)};confirm=null;onQueued()}
@@ -46,6 +46,7 @@ fun MediaToolsDialog(source:Download,onDismiss:()->Unit,onQueued:()->Unit) {
                 FilterChip(selected=operation==option,onClick={operation=option},enabled=!busy && (option!=EditOperation.Audio || info?.audio==true),label={Text(option.label)})
             }
             if(operation==EditOperation.Trim) {
+                info?.let { data -> TrimPreview(source,data,start,end,active=confirm==null && !busy){from,until->start=from;end=until} }
                 OutlinedTextField(value=start,onValueChange={start=it.take(24)},label={Text("Start · seconds or HH:MM:SS")},singleLine=true,enabled=!busy)
                 OutlinedTextField(value=end,onValueChange={end=it.take(24)},label={Text("End · seconds or HH:MM:SS")},singleLine=true,enabled=!busy)
                 Text("Source duration: ${info?.seconds?.takeIf{it>0}?.let{durationLabel(it.toLong())}?:"Not reported"}")
