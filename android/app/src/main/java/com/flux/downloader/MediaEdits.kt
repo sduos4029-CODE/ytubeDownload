@@ -134,6 +134,8 @@ object NativeMedia {
                 if(pending.isNotEmpty())emit()
                 control()
                 check(process.waitFor()==0){"The media engine could not create this output. Try MKV or a different format."}
+            } catch(error:java.io.IOException) {
+                currentCoroutineContext().ensureActive();throw error
             } finally {
                 withContext(NonCancellable) {
                     if(process.isAlive)process.destroyForcibly()
