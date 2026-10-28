@@ -2,6 +2,10 @@ package com.flux.downloader
 
 import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
@@ -97,9 +101,11 @@ object PlaylistBatch {
         require(first in 1..items.size && last in first..items.size) {"Choose a range from 1 to ${items.size}."}
         return items.subList(first-1,last).map {it.key}.toSet()
     }
-    suspend fun saved(context:Context,plan:Download,jobs:List<Download>):Boolean {
-        val source=RepeatDownloads.sourceKey(plan.url) ?: return false
-        return jobs.any {old->old.state=="Complete" && old.audioOnly==plan.audioOnly && old.mediaKind==plan.mediaKind &&
+    suspend fun saved(context:Context,plan:Download,jobs:List<Download>):Boolean=withContext(Dispatchers.IO) {
+        val source=RepeatDownloads.sourceKey(plan.url) ?: return@withContext false
+        jobs.any {old->
+            currentCoroutineContext().ensureActive()
+            old.state=="Complete" && old.audioOnly==plan.audioOnly && old.mediaKind==plan.mediaKind &&
             old.selector==plan.selector && old.mediaId==plan.mediaId && old.replaceEmbeddedAudio==plan.replaceEmbeddedAudio &&
             RepeatDownloads.sourceKey(old.url)==source && LibraryDetails.inspect(context,old).available}
     }
