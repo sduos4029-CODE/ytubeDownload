@@ -118,14 +118,21 @@ internal fun TrimPreview(source:Download,info:EditSource,start:String,end:String
         val total=info.seconds.toFloat()
         val from=(runCatching{MediaEdits.seconds(start).toFloat()}.getOrDefault(0f)).coerceIn(0f,total)
         val until=(runCatching{MediaEdits.seconds(end).toFloat()}.getOrDefault(total)).coerceIn(from,total)
-        RangeSlider(modifier=Modifier.semantics{contentDescription="Trim handles"},enabled=active,value=from..until,valueRange=0f..total,onValueChange={range ->
-            pause();onRange(trimTime(range.start.toDouble()),trimTime(kotlin.math.floor(range.endInclusive.toDouble().coerceAtMost(info.seconds)*1000)/1000))
-        })
-        Text("Drag both trim handles. Use the playback pointer above to inspect a frame.",style=MaterialTheme.typography.bodySmall)
-        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-            TextButton(enabled=active && ready,onClick={pause();onRange(trimTime(position/1000.0),end)}){Text("Set start here")}
-            TextButton(enabled=active && ready,onClick={pause();onRange(start,trimTime(position/1000.0))}){Text("Set end here")}
+        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
+            Text("Start · $start s",color=MaterialTheme.colorScheme.primary)
+            Text("End · $end s",color=MaterialTheme.colorScheme.primary)
         }
+        RangeSlider(modifier=Modifier.heightIn(min=64.dp).semantics{contentDescription="Trim handles"},enabled=active && total>=0.1f,value=from..until,valueRange=0f..total,onValueChange={range ->
+            val last=kotlin.math.floor(range.endInclusive.toDouble().coerceIn(0.1,info.seconds)*1000)/1000
+            val first=range.start.toDouble().coerceIn(0.0,(last-0.1).coerceAtLeast(0.0))
+            pause();onRange(trimTime(first),trimTime(last))
+        })
+        Text("Left handle = Start · Right handle = End. The bar above moves the preview only.",style=MaterialTheme.typography.bodySmall)
+        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            TextButton(enabled=active && ready && position/1000.0+0.1<=runCatching{MediaEdits.seconds(end)}.getOrDefault(0.0),onClick={pause();onRange(trimTime(position/1000.0),end)}){Text("Set start here")}
+            TextButton(enabled=active && ready && position/1000.0>=runCatching{MediaEdits.seconds(start)+0.1}.getOrDefault(Double.MAX_VALUE),onClick={pause();onRange(start,trimTime(position/1000.0))}){Text("Set end here")}
+        }
+        TextButton(enabled=active,onClick={pause();onRange("0",trimTime(kotlin.math.floor(info.seconds*1000)/1000))}){Text("Reset to full video")}
     }
     if(bounds==null)Text("Enter an end after the start, within the source duration.",color=MaterialTheme.colorScheme.error)
     if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)

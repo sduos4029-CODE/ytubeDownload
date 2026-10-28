@@ -76,10 +76,14 @@ class MediaToolsChecks(private val instrumentation:Instrumentation,private val r
         for(preset in listOf(EditPreset.OriginalAudio,EditPreset.Mp3,EditPreset.Flac,EditPreset.Wav,EditPreset.Mp4H264)) {
             if(!preset.encoders.all{it in encoders})continue
             val operation=if(preset.audioOnly)EditOperation.Audio else EditOperation.Trim
-            val job=MediaEdits.prepare(source,info,operation,preset,EditQuality.Small,"1","2","")
+            val job=MediaEdits.prepare(source,info,operation,preset,if(preset==EditPreset.Mp4H264)EditQuality.High else EditQuality.Small,if(preset==EditPreset.Mp4H264)"1.250" else "1",if(preset==EditPreset.Mp4H264)"2.750" else "2","")
             MediaEdits.enqueue(app,job);val result=await(job.id)
             check(tracks(result.uri).any{it.startsWith(if(preset.audioOnly)"audio/" else "video/")})
-            if(preset==EditPreset.Mp4H264)check(MediaEdits.probe(app,result).seconds in 0.5..2.0)
+            if(preset==EditPreset.Mp4H264) {
+                val precise=MediaEdits.probe(app,result)
+                check(precise.video && precise.audio && precise.seconds in 1.4..1.8 && result.uri!=source.uri)
+                report("PASS: precise single trim from 1.250 to 2.750 seconds exports H264 AAC with expected 1.5 second duration")
+            }
             report("PASS: native ${preset.name} export creates a separate readable file with the expected tracks")
         }
         val ranges=listOf(TrimClip(3.0,4.0),TrimClip(0.0,1.0),TrimClip(3.0,4.0))

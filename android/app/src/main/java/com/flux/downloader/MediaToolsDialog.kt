@@ -23,7 +23,7 @@ fun MediaToolsDialog(source:Download,onDismiss:()->Unit,onQueued:()->Unit) {
     var info by remember(source.id){mutableStateOf<EditSource?>(null)}
     var encoders by remember{mutableStateOf<Set<String>?>(null)}
     var operation by remember{mutableStateOf(EditOperation.Trim)}
-    var preset by remember{mutableStateOf(if(source.audioOnly)EditPreset.OriginalAudio else EditPreset.Mkv)}
+    var preset by remember{mutableStateOf(if(source.audioOnly)EditPreset.OriginalAudio else EditPreset.Mp4H264)}
     var quality by remember{mutableStateOf(EditQuality.High)}
     var start by remember{mutableStateOf("0")};var end by remember{mutableStateOf(source.duration.takeIf{it>0}?.toString().orEmpty())}
     var clips by remember{mutableStateOf<List<TrimClip>>(emptyList())};var selected by remember{mutableStateOf(-1)}
@@ -32,6 +32,7 @@ fun MediaToolsDialog(source:Download,onDismiss:()->Unit,onQueued:()->Unit) {
     val playback=remember(source.id){TrimPlayback()}
     val scroll=rememberScrollState()
     var advanced by remember{mutableStateOf(false)}
+    var joining by remember{mutableStateOf(false)}
     var undoClips by remember{mutableStateOf<List<TrimClip>?>(null)}
     fun nextRange() {
         selected=-1
@@ -58,14 +59,14 @@ fun MediaToolsDialog(source:Download,onDismiss:()->Unit,onQueued:()->Unit) {
             encoders=NativeMedia.encoders(context)
         }catch(e:CancellationException){throw e}catch(e:Exception){message=e.message?:"Unable to inspect this file."}
     }
-    val multi=operation==EditOperation.Trim && clips.size>=2
+    val multi=operation==EditOperation.Trim && joining && clips.size>=2
     val available=info?.let{MediaEdits.presets(it,operation)}.orEmpty()
-    LaunchedEffect(operation,info,multi){if(multi)preset=EditPreset.Mp4H264 else if(preset !in available && available.isNotEmpty())preset=available.first()}
+    LaunchedEffect(operation,info,multi){if(multi)preset=EditPreset.Mp4H264 else if(preset !in available && available.isNotEmpty())preset=if(EditPreset.Mp4H264 in available)EditPreset.Mp4H264 else available.first()}
     val rangeValid=trimBounds(start,end,info?.seconds?:0.0)!=null
-    val listMode=operation==EditOperation.Trim && clips.isNotEmpty()
-    val editing=operation==EditOperation.Trim && selected>=0
+    val listMode=operation==EditOperation.Trim && joining && clips.isNotEmpty()
+    val editing=operation==EditOperation.Trim && joining && selected>=0
     val valid=info!=null && !editing && (!multi || EditPreset.Mp4H264.encoders.all{it in encoders.orEmpty()}) &&
-        (operation!=EditOperation.Trim || listMode || rangeValid) && encoders!=null && preset in available && preset.encoders.all{it in encoders.orEmpty()}
+        (operation!=EditOperation.Trim || if(joining)listMode else rangeValid) && encoders!=null && preset in available && preset.encoders.all{it in encoders.orEmpty()}
     val canSave=rangeValid && runCatching{MediaEdits.seconds(end)-MediaEdits.seconds(start)+1e-9>=0.1}.getOrDefault(false)
     fun review() {
         runCatching {
@@ -86,6 +87,14 @@ fun MediaToolsDialog(source:Download,onDismiss:()->Unit,onQueued:()->Unit) {
                 HorizontalDivider()
                 Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(scroll).padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
                     val data=info
+                    if(operation==EditOperation.Trim && data?.video==true) {
+                        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                            FilterChip(selected=!joining,enabled=!editing,onClick={joining=false;selected=-1;message=""},label={Text("Trim one video")})
+                            FilterChip(selected=joining,enabled=!editing,onClick={joining=true;selected=-1;message=""},label={Text("Join clips")})
+                        }
+                        Text(if(joining)"1. Choose a range  2. Add clip  3. Repeat, then export" else "1. Drag Start / End  2. Play to check  3. Export",fontWeight=FontWeight.SemiBold)
+                        Text("Keep the selected part. Everything outside it is removed from the new video.",style=MaterialTheme.typography.bodySmall)
+                    }
                     if(data!=null) {
                         val from=if(operation==EditOperation.Trim)start else "0"
                         val until=if(operation==EditOperation.Trim)end else trimTime(kotlin.math.floor(data.seconds*1000)/1000)
@@ -97,7 +106,7 @@ fun MediaToolsDialog(source:Download,onDismiss:()->Unit,onQueued:()->Unit) {
                             OutlinedTextField(value=end,onValueChange={range(start,it.take(24))},modifier=Modifier.weight(1f),label={Text("End time")},singleLine=true,enabled=!busy)
                         }
                         Text("Seconds or HH:MM:SS · millisecond precision",style=MaterialTheme.typography.bodySmall)
-                        if(data?.video==true) {
+                        if(data?.video==true && joining) {
                             Text("Your clips · ${clips.size} / ${ClipEdits.MAX_CLIPS}",fontWeight=FontWeight.Bold)
                             if(clips.isEmpty())Text("Choose a range, then tap Add clip. Repeat to build one video.",style=MaterialTheme.typography.bodySmall)
                             else {
@@ -154,13 +163,16 @@ fun MediaToolsDialog(source:Download,onDismiss:()->Unit,onQueued:()->Unit) {
                 }
                 HorizontalDivider()
                 if(message.isNotBlank())Text(message,modifier=Modifier.padding(horizontal=16.dp),color=MaterialTheme.colorScheme.error)
+                if(info!=null && encoders==null)Text("Preparing export tools…",modifier=Modifier.padding(horizontal=16.dp),style=MaterialTheme.typography.bodySmall)
                 if(info!=null)TextButton(enabled=playback.canPlay && !busy,onClick={playback.toggle()},modifier=Modifier.fillMaxWidth()) {
                     Text(if(playback.playing)"Pause preview" else "Play selected clip")
                 }
                 if(editing)Text("Clip ${selected+1} · $start → $end",modifier=Modifier.padding(horizontal=16.dp),style=MaterialTheme.typography.bodySmall)
                 else if(listMode)Text("Export: ${clips.size} clips · ${trimTime(clips.sumOf{it.seconds})} seconds",modifier=Modifier.padding(horizontal=16.dp),style=MaterialTheme.typography.bodySmall)
+                else if(operation==EditOperation.Trim && rangeValid)Text("Keep $start → $end · ${trimTime(MediaEdits.seconds(end)-MediaEdits.seconds(start))} seconds",modifier=Modifier.padding(horizontal=16.dp),style=MaterialTheme.typography.bodySmall)
+                if(operation==EditOperation.Trim && joining && clips.isEmpty())Text("Add your first clip to enable export.",modifier=Modifier.padding(horizontal=16.dp),style=MaterialTheme.typography.bodySmall)
                 Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=8.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    if(operation==EditOperation.Trim && info?.video==true) {
+                    if(operation==EditOperation.Trim && info?.video==true && joining) {
                         OutlinedButton(modifier=Modifier.weight(1f),enabled=!busy && canSave && (editing || clips.size<ClipEdits.MAX_CLIPS),onClick={
                             val clip=TrimClip(MediaEdits.seconds(start),MediaEdits.seconds(end))
                             if(editing)clips=clips.toMutableList().apply{this[selected]=clip} else clips=clips+clip
@@ -168,16 +180,17 @@ fun MediaToolsDialog(source:Download,onDismiss:()->Unit,onQueued:()->Unit) {
                         }){Text(if(editing)"Save clip" else "Add clip")}
                     }
                     if(editing)TextButton(modifier=Modifier.weight(1f),enabled=!busy,onClick={nextRange();message=""}){Text("Cancel clip edit")}
-                    else Button(modifier=Modifier.weight(1f),enabled=valid && !busy,onClick=::review){Text("Review export")}
+                    else Button(modifier=Modifier.weight(1f),enabled=valid && !busy,onClick=::review){Text(if(operation==EditOperation.Trim && !joining)"Export trimmed video" else "Review export")}
                 }
 
             }
         }
         val job=confirm
-        if(job!=null)AlertDialog(onDismissRequest={if(!busy)confirm=null},title={Text("Create a new media file?")},text={Text("${job.label}\n${if(job.editSegments.isNotBlank())"${clips.size} selected clips will merge into one MP4 in list order." else operation.label}\n${if(preset.copies)"Source encoding is copied." else "Re-encoding can change quality."}\nYour original stays unchanged. The result appears in Library.")},
+        val singleTrim=operation==EditOperation.Trim && !joining
+        if(job!=null)AlertDialog(onDismissRequest={if(!busy)confirm=null},title={Text(if(singleTrim)"Save trimmed video?" else "Create a new media file?")},text={Text("${if(singleTrim)"Keep ${trimTime(job.editStart)} → ${trimTime(job.editEnd)} seconds\nNew duration: ${trimTime(job.editEnd-job.editStart)} seconds\n" else ""}${job.label}\n${if(job.editSegments.isNotBlank())"${clips.size} selected clips will merge into one MP4 in list order." else operation.label}\n${if(preset.copies)"Source encoding is copied." else "Re-encoding can change quality."}\nYour original stays unchanged. The result appears in Library.\n${if(Store.queuePaused.value)"Your queue is paused. Resume it in Downloads to start trimming." else "Trimming starts in Downloads; you can follow its progress there."}")},
             confirmButton={TextButton(enabled=!busy,onClick={busy=true;scope.launch{
                 try {withContext(Dispatchers.IO){MediaEdits.enqueue(context,job)};confirm=null;onQueued()}
                 catch(e:CancellationException){throw e}catch(e:Exception){message=e.message?:"Unable to queue export.";confirm=null}finally{busy=false}
-            }}){Text("Create new file")}},dismissButton={TextButton(enabled=!busy,onClick={confirm=null}){Text("Keep browsing")}})
+            }}){Text(if(singleTrim)"Trim & save" else "Create new file")}},dismissButton={TextButton(enabled=!busy,onClick={confirm=null}){Text("Keep editing")}})
     }
 }
