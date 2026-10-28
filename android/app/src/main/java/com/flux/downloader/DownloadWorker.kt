@@ -214,6 +214,7 @@ private class DownloadTask(
             val measuredAudio = if(job.isPhoto) "" else inspectSavedAudio(uri)
             if (!Store.finishDownload(jobId, uri.toString(), mime, result.length(), measuredAudio)) throw UserStopped()
             runCatching {post(notification(job.title, "Download complete", 100, false))}
+            Unit
         } catch (cancel: CancellationException) {
             withContext(NonCancellable) { settleStopped() }
             throw cancel
