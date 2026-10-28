@@ -83,6 +83,8 @@ fun LibraryPage(jobs: List<Download>, onRetry: (Download) -> Unit, onDownloadAga
     fun favourite(job: Download) {
         scope.launch { withContext(Dispatchers.IO) { Store.toggleFavourite(job.id) } }
     }
+    val shownIds=shown.map {it.id}.toSet()
+    val unselectResults=LibraryResultSelection.unselect(shownIds,selected)
     val chosen = jobs.filter { it.id in selected && it.terminal }
     val summary = remember(chosen) { selectionSummary(chosen) }
     val eligibleFavourites = chosen.filter { it.state == "Complete" && it.uri.isNotBlank() }
@@ -165,7 +167,8 @@ fun LibraryPage(jobs: List<Download>, onRetry: (Download) -> Unit, onDownloadAga
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("${chosen.size} selected", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                TextButton(enabled = !busy, onClick = { selected = shown.take(LibraryActions.MAX_SELECTION).map { it.id }.toSet() }) { Text("Select results") }
+                TextButton(enabled = !busy && shownIds.isNotEmpty() && (shownIds.any {it in selected} || selected.size<LibraryActions.MAX_SELECTION),
+                    onClick = { selected = LibraryResultSelection.toggle(shownIds,selected) }) { Text(if(unselectResults)"Unselect results" else "Select results") }
                 TextButton(enabled = !busy, onClick = { selected = emptySet(); selecting = false }) { Text("Done") }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {

@@ -787,7 +787,19 @@ class RuntimeChecks : Instrumentation() {
                     click("Remove history"); click("Remove history")
                     check(Store.downloads.value.none { it.id in setOf(one.id,two.id) })
                     listOf(one,two).forEach { saved -> check(targetContext.contentResolver.openInputStream(Uri.parse(saved.uri))!!.use { it.readBytes().isNotEmpty() }) }
-                    click("Select downloads"); click("Select results"); click("Done")
+                    click("Select downloads");click("Select results")
+                    check(visible("Unselect results"))
+                    click("Unselect results");check(visible("0 selected") && visible("Select results"))
+                    var visibleRows=0
+                    fun checked(node:android.view.accessibility.AccessibilityNodeInfo?):Boolean {
+                        if(node==null)return false
+                        val row=node.isVisibleToUser && node.isCheckable && node.contentDescription?.toString()?.startsWith("Select ")==true
+                        if(row)visibleRows++
+                        return (row && node.isChecked) || (0 until node.childCount).any {checked(node.getChild(it))}
+                    }
+                    check(!checked(uiAutomation.rootInActiveWindow) && visibleRows>0) { "Unselect results did not show unchecked result rows" }
+                    click("Select results");check(visible("Unselect results"));click("Done")
+                    report("PASS: Select results changes to Unselect results; a second tap clears visible checkmarks and a third tap selects again")
                     report("PASS: release Library multi-select, dismiss/confirm removal and selection exit preserve saved files")
                     result.putString("stream","LIBRARY UI CHECKS PASSED\n"); finish(Activity.RESULT_OK,result); return
                 }

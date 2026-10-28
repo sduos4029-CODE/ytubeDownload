@@ -10,8 +10,8 @@ android {
         applicationId = "com.flux.downloader"
         minSdk = 26
         targetSdk = 35
-        versionCode = 27
-        versionName = "2.5.3"
+        versionCode = 28
+        versionName = "2.5.4"
         testInstrumentationRunner = "com.flux.downloader.RuntimeChecks"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
     }

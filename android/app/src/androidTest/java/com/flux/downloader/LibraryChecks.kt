@@ -20,6 +20,19 @@ class LibraryChecks(private val instrumentation: Instrumentation, private val re
     }
     suspend fun run() {
         Store.init(app)
+        kotlin.run {
+            val shown=linkedSetOf("one","two")
+            val selected=LibraryResultSelection.toggle(shown,setOf("hidden"))
+            check(selected==setOf("hidden","one","two") && LibraryResultSelection.unselect(shown,selected))
+            check(LibraryResultSelection.toggle(shown,selected)==setOf("hidden"))
+            val partial=LibraryResultSelection.toggle(shown,setOf("one"));check(partial==shown)
+            val almostFull=(1..99).map {"kept-$it"}.toSet()
+            val capped=LibraryResultSelection.toggle(shown,almostFull)
+            check(capped.size==100 && capped.containsAll(almostFull) && LibraryResultSelection.unselect(shown,capped))
+            check(LibraryResultSelection.toggle(shown,capped)==almostFull)
+            check(LibraryResultSelection.toggle(emptySet(),selected)==selected)
+            report("PASS: results selection toggle preserves hidden selections, fills partial selection and respects the 100-item cap")
+        }
         WorkManager.getInstance(app).cancelAllWork().result.get()
         withTimeout(60000) { Downloads.execution.lock(); Downloads.execution.unlock() }
         Store.setQueuePaused(true)
