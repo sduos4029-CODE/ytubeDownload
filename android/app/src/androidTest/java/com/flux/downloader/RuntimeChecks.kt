@@ -360,7 +360,21 @@ class RuntimeChecks : Instrumentation() {
                     if(screenshot!=null) {
                         java.io.File(targetContext.getExternalFilesDir(null),"media-tools-ui.png").outputStream().use {screenshot.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)};screenshot.recycle()
                     }
-                    click("Add clip");click("Add clip")
+                    // The first, simple export must honour the visible range without Add clip.
+                    val singleBefore=Store.downloads.value.map{it.id}.toSet()
+                    click("Export trimmed video");click("Trim & save")
+                    val singleTrim=Store.downloads.value.single{it.id !in singleBefore}
+                    check(singleTrim.editPreset==EditPreset.Mp4H264.name && singleTrim.editSegments.isBlank() && singleTrim.editStart==0.0 && singleTrim.editEnd in 1.9..2.1)
+                    Downloads.cancel(targetContext,singleTrim)
+                    report("PASS: simple trim exports the selected range directly with precise H264 AAC, without Add clip")
+                    click("Library");click("More actions for Flux media tools source");click("Media tools")
+                    val freshEnd=locateEnd() ?: error("Reopened trim endpoint unavailable")
+                    check(freshEnd.performAction(android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS.id,Bundle().apply {
+                        putFloat(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_PROGRESS_VALUE,2f)
+                    }))
+                    Thread.sleep(300)
+                    runOnMainSync {preview=android.view.inspector.WindowInspector.getGlobalWindowViews().firstNotNullOfOrNull {it.findViewWithTag<android.widget.VideoView>("flux-trim-preview")}}
+                    click("Join clips");click("Add clip");click("Add clip")
                     fun editLabel(node:android.view.accessibility.AccessibilityNodeInfo?):String? {
                         if(node==null)return null
                         val text=node.text?.toString()
