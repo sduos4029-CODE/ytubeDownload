@@ -9,6 +9,11 @@ object PhotoTypes {
 
 object SourceFailures {
     fun message(url: String, error: String): String? {
+        if(MediaLinks.isThreads(url))return when {
+            error.contains("429") -> "Threads is limiting requests. Wait before trying this public post again."
+            error.contains("403") || error.contains("401") -> "Threads denied this request. Retry later or try another public post. No Instagram connection or Flux server is used for Threads."
+            else -> "Flux could not retrieve or download this Threads post. It may be limited, unavailable, or its page format changed. Retry the public post later."
+        }
         if(!MediaLinks.isInstagram(url))return null
         return when {
             error.contains("Flux server",true) -> error.take(350)

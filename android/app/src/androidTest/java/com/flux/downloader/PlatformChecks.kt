@@ -21,6 +21,7 @@ class PlatformChecks(private val instrumentation: Instrumentation, private val r
             report("PASS: Instagram source URL, favourite and saved-file access persist across process restart")
             return
         }
+        ThreadsChecks(instrumentation,report).run()
         check(Engine.target("music live")=="ytsearch5:music live")
         check(Engine.target("instagram.com/creator/reel/FluxDemo01/?igsh=tracking")==POST)
         check(Engine.target("HTTPS://WWW.INSTAGRAM.COM/reel/FluxDemo01/")==POST)
@@ -30,7 +31,11 @@ class PlatformChecks(private val instrumentation: Instrumentation, private val r
         check(MediaLinks.shared("Watch https://youtu.be/fixture")=="https://youtu.be/fixture")
         check(MediaLinks.shared("Profile https://www.instagram.com/creator/")=="https://www.instagram.com/creator/")
         check(MediaLinks.shared("https://evil.invalid/a").isEmpty())
-        listOf("http://www.instagram.com/reel/FluxDemo01/","https://www.instagram.com/creator/","https://www.instagram.com/stories/creator/123/","https://www.instagram.com/share/reel/FluxDemo01/","https://www.threads.com/@creator/post/FluxDemo01","https://instagram.com.evil.invalid/reel/FluxDemo01/","https://user@www.instagram.com/reel/FluxDemo01/","https://www.instagram.com:444/reel/FluxDemo01/").forEach { check(runCatching { Engine.target(it) }.isFailure) { it } }
+        listOf("http://www.instagram.com/reel/FluxDemo01/","https://www.instagram.com/creator/","https://www.instagram.com/stories/creator/123/","https://www.instagram.com/share/reel/FluxDemo01/","https://instagram.com.evil.invalid/reel/FluxDemo01/","https://user@www.instagram.com/reel/FluxDemo01/","https://www.instagram.com:444/reel/FluxDemo01/").forEach { check(runCatching { Engine.target(it) }.isFailure) { it } }
+        check(Engine.target("https://www.threads.net/@creator/post/FluxDemo01?xmt=tracking")=="https://www.threads.com/@creator/post/FluxDemo01")
+        check(MediaLinks.shared("See https://www.threads.com/@creator/post/FluxDemo01")=="https://www.threads.com/@creator/post/FluxDemo01")
+        check(RepeatDownloads.sourceKey("https://www.threads.com/@creator/post/FluxDemo01")=="threads:FluxDemo01")
+        listOf("https://www.threads.com/@creator/", "http://www.threads.com/@creator/post/FluxDemo01", "https://www.threads.com.evil.invalid/@creator/post/FluxDemo01").forEach { check(MediaLinks.parse(it)==null) }
         val video=video()
         check(video.platform==MediaPlatform.Instagram && video.url==POST && video.thumbnail.isEmpty())
         check(video.key!=video.copy(platform=MediaPlatform.YouTube).key)

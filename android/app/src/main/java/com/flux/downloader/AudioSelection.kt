@@ -5,7 +5,7 @@ fun audioCodecLabel(codec: String): String = when {
     codec.contains("opus", true) -> "Opus"
     codec.contains("vorbis", true) -> "Vorbis"
     codec.contains("mp3", true) || codec.contains("mpeg", true) -> "MP3"
-    codec.isBlank() || codec in listOf("none", "null") -> "Source audio"
+    codec.isBlank() || codec in listOf("none", "null", "unknown") -> "Source audio"
     else -> codec.uppercase()
 }
 

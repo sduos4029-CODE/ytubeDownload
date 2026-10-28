@@ -264,7 +264,7 @@ private fun Discover(model: FluxModel, onBatchQueued: ()->Unit) {
                         else Icon(Icons.Rounded.Search, null, Modifier.size(20.dp))
                         Text(if (model.busy) "Finding your video…" else "Find video", Modifier.padding(start = 10.dp), fontWeight = FontWeight.Bold)
                     }
-                    Text("Words search YouTube. YouTube playlist links show up to 50 entries for selection. Paste a public Instagram Reel, photo or carousel post link. Profiles, Stories, Threads and login-required posts are not supported.",
+                    Text("Words search YouTube. YouTube playlist links show up to 50 entries for selection. Paste a public Instagram Reel, photo or carousel post link. Public Threads video, photo and carousel post links are supported. Profiles, Stories and login-required posts are not supported.",
                         color = Muted, fontSize = 11.sp, lineHeight = 16.sp, modifier = Modifier.padding(top = 12.dp))
                 }
             }
