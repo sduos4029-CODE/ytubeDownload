@@ -23,6 +23,7 @@ class FluxApplication : Application() {
         InstagramSession.init(this)
         InstagramBrowser.recover(this)
         Store.init(this)
+        runCatching {DownloadNotices.reconcile(this)}
     }
 }
 

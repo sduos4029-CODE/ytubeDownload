@@ -69,6 +69,7 @@ check galleryRestartOnly 'GALLERY RESTART CHECKS PASSED'
 adb install -r "$RUNNER_TEMP/flux-release-ui.apk"
 check transferUiOnly 'TRANSFER UI CHECKS PASSED'
 check libraryUiOnly 'LIBRARY UI CHECKS PASSED'
+adb pull /sdcard/Android/data/com.flux.downloader/files/library-compact-ui.png test-results/library-compact-ui.png || true
 check progressUiOnly 'PROGRESS UI CHECKS PASSED'
 check favouritesUiOnly 'FAVOURITES UI CHECKS PASSED'
 check repeatUiOnly 'REPEAT UI CHECKS PASSED'

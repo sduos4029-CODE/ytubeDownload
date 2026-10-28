@@ -138,6 +138,8 @@ object Downloads {
         Store.change(job.id, durable = true) {
             if (it.state == "Complete") it else it.copy(state = "Cancelled", detail = "Download cancelled", nextAttemptAt = 0)
         }
+        if(Store.downloads.value.find {it.id==job.id}?.state=="Cancelled")
+            context.getSystemService(android.app.NotificationManager::class.java).cancel(job.id.hashCode())
         // The active worker observes this state and stops its subprocess, then
         // acknowledges cleanup before letting the next queue item start.
         // Do not cancel a WorkRequest chain: that would cancel following items.

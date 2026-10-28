@@ -48,6 +48,7 @@ class QueueChecks(private val instrumentation: Instrumentation, private val repo
         check(!QueueRules.transient("No space left on device"))
         check((1..3).map(QueueRules::retryDelay) == listOf(30_000L, 60_000L, 120_000L))
         report("PASS: transient retry policy excludes access-denied/storage errors and uses bounded 30/60/120 second delays")
+        NotificationChecks(instrumentation,report).styles()
         Engine.initialize(app)
         FixtureServer().use { server ->
             val sample = Download(url = server.slowUrl, title = "Flux pause and resume fixture", thumbnail = "", selector = "bestaudio",
@@ -57,6 +58,7 @@ class QueueChecks(private val instrumentation: Instrumentation, private val repo
             Downloads.pause(app, sample)
             waitFor(sample.id, "Paused")
             withTimeout(60_000) { while (Store.isWorking(sample.id)) delay(100) }
+            NotificationChecks(instrumentation,report).posted(sample,"Paused")
             val length = parts(sample).sumOf { it.length() }
             check(length > 4096) { "Pause discarded partial data" }
             check(Downloads.workDir(app, sample.id).absolutePath.startsWith(app.noBackupFilesDir.absolutePath))
@@ -65,6 +67,8 @@ class QueueChecks(private val instrumentation: Instrumentation, private val repo
             check(server.rangeRequests.get() > 0) { "Resuming did not request a non-zero HTTP range" }
             check(hash(done.uri) == sourceHash()) { "Resumed output differs from source audio" }
             withTimeout(30_000) { while (Downloads.workDir(app, sample.id).exists()) delay(100) }
+            NotificationChecks(instrumentation,report).posted(done,"Complete")
+            NotificationChecks(instrumentation,report).legacy(done)
             report("PASS: active pause waits for native shutdown, retains $length partial bytes, resumes via HTTP Range and preserves source audio samples")
 
             val pa = sample.copy(id = id(), title = "Flux pause-all A", state = "Queued")

@@ -265,6 +265,18 @@ class RuntimeChecks : Instrumentation() {
                     }
                     error("UI control not found: $label")
                 }
+                fun libraryOption(label:String,choice:String?=null) {
+                    click("Library options");click(label);if(choice!=null)click(choice);click("Done")
+                }
+                fun libraryTools() {click("Library options");click("Collections & file tools")}
+                fun visible(label:String):Boolean {
+                    fun find(node:android.view.accessibility.AccessibilityNodeInfo?):Boolean {
+                        if(node==null)return false
+                        if(node.isVisibleToUser && (node.text?.toString()==label || node.contentDescription?.toString()==label))return true
+                        return (0 until node.childCount).any {find(node.getChild(it))}
+                    }
+                    return find(uiAutomation.rootInActiveWindow)
+                }
                 if(mediaToolsUiOnly) {
                     Store.setLibrary(LibraryPreferences(LibraryLayout.List,LibrarySize.Small,LibrarySort.Title))
                     click("Library");click("More actions for Flux media tools source");click("Media tools")
@@ -490,8 +502,8 @@ class RuntimeChecks : Instrumentation() {
                         removeMonitor(monitor);targetContext.contentResolver.delete(exported,null,null);targetContext.contentResolver.delete(imported,null,null)
                         Downloads.cancel(targetContext,existing);UpgradeSettings.set(UpgradePreferences());Store.setTransfers(TransferPreferences());DownloadPresets.set(DownloadPreset.Best)
                     }
-                    click("Library");click("Collections & file tools");click("Show all collections")
-                    click("Collections & file tools");click("Close tools")
+                    click("Library");libraryTools();click("Show all collections")
+                    libraryTools();click("Close tools");click("Done")
                     report("PASS: release audio/schedule/backup settings and Library tools are reachable; export/import use Android document pickers without credential sharing")
                     report("PASS: named language picker, schedule review/cancel/apply/clear, real backup snapshot export and import preview/cancel/restore preserve current and existing job schedules")
                     result.putString("stream","UPGRADE UI CHECKS PASSED\n");finish(Activity.RESULT_OK,result);return
@@ -586,7 +598,7 @@ class RuntimeChecks : Instrumentation() {
                     click("Download all");click("Queue items")
                     check(Store.downloads.value.any {it.url==GalleryChecks.POST && it.mediaId=="VideoTwo" && it.state=="Paused"})
                     check(Store.downloads.value.count {it.url==GalleryChecks.POST && it.state=="Paused"}==5)
-                    click("Library");click("Photos");click("Compact")
+                    click("Library");click("Photos");libraryOption("Compact")
                     click("More actions for Saved gallery photo");click("File details");click("Copy source link");click("Close details")
                     check(targetContext.getSystemService(android.content.ClipboardManager::class.java).primaryClip?.getItemAt(0)?.text?.toString()==GalleryChecks.POST)
                     report("PASS: release photo preview/zoom reset/download, individual carousel selection, batch confirmation cancellation, Photos filter and saved photo source copying")
@@ -607,7 +619,7 @@ class RuntimeChecks : Instrumentation() {
                     click("Choose quality");click("Download Source video")
                     check(Store.downloads.value.any {it.url==ThreadsChecks.POST && it.mediaId=="Fixture01_200" && it.state=="Paused"})
                     report("PASS: release Threads result queues the canonical post URL and selected media identity without login or server configuration")
-                    click("Library");click("Compact");click("More actions for Instagram saved fixture");click("File details");click("Copy source link")
+                    click("Library");libraryOption("Compact");click("More actions for Instagram saved fixture");click("File details");click("Copy source link")
                     check(targetContext.getSystemService(android.content.ClipboardManager::class.java).primaryClip?.getItemAt(0)?.text?.toString()==PlatformChecks.POST)
                     click("Close details")
                     runOnMainSync { model!!.query="https://www.instagram.com/creator/";model!!.search() }
@@ -631,6 +643,7 @@ class RuntimeChecks : Instrumentation() {
                         for(i in 0 until node.childCount) { val child=editable(node.getChild(i));if(child!=null)return child }
                         return null
                     }
+                    click("Search library")
                     val input=editable(uiAutomation.rootInActiveWindow) ?: error("Library search field unavailable")
                     check(input.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SET_TEXT,Bundle().apply {
                         putCharSequence(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,"Batch tools QA")
@@ -638,7 +651,7 @@ class RuntimeChecks : Instrumentation() {
                     Thread.sleep(700)
                     runOnMainSync { targetContext.getSystemService(android.view.inputmethod.InputMethodManager::class.java)
                         .hideSoftInputFromWindow(activity.window.decorView.windowToken,0) }
-                    click("Status: All states");click("Completed");click("Compact")
+                    libraryOption("Status: All states","Completed");libraryOption("Compact")
                     click("Select downloads");click("Select results")
                     fun summaryVisible(node:android.view.accessibility.AccessibilityNodeInfo?):Boolean {
                         if(node==null)return false
@@ -648,12 +661,12 @@ class RuntimeChecks : Instrumentation() {
                     check(summaryVisible(uiAutomation.rootInActiveWindow)) { "Recorded selection summary not visible" }
                     click("Favourite")
                     check(Store.downloads.value.filter { it.id in setOf(one.id,two.id) }.all { it.favourite })
-                    click("Favourites");click("Unfavourite")
+                    libraryOption("Favourites only");click("Unfavourite")
                     check(Store.downloads.value.filter { it.id in setOf(one.id,two.id) }.none { it.favourite })
-                    click("Favourite");click("Done");click("Favourites")
-                    click("Status: Completed");click("Failed")
+                    click("Favourite");click("Done");libraryOption("Favourites only")
+                    libraryOption("Status: Completed","Failed")
                     click("More actions for ${failed.title}");click("File details");click("Close details")
-                    click("Status: Failed");click("Cancelled")
+                    libraryOption("Status: Failed","Cancelled")
                     click("More actions for ${cancelled.title}");click("File details");click("Close details")
                     check(before.contentEquals(targetContext.contentResolver.openInputStream(Uri.parse(one.uri))!!.use { it.readBytes() }))
                     report("PASS: release search and completed/failed/cancelled filters, filtered selection, bulk favourite/unfavourite and selection retained across filters; file bytes unchanged")
@@ -665,7 +678,7 @@ class RuntimeChecks : Instrumentation() {
                     Store.add(item)
                     val count=Store.downloads.value.size
                     val original=targetContext.contentResolver.openInputStream(Uri.parse(item.uri))!!.use { it.readBytes() }
-                    click("Library");click("Compact");click("More actions for ${item.title}");click("Download again");click("Keep current file")
+                    click("Library");libraryOption("Compact");click("More actions for ${item.title}");click("Download again");click("Keep current file")
                     check(Store.downloads.value.size==count)
                     click("More actions for ${item.title}");click("Download again");click("Queue new download")
                     val first=RepeatDownloads.matching(Store.downloads.value,item)!!
@@ -687,10 +700,10 @@ class RuntimeChecks : Instrumentation() {
                     Store.setQueuePaused(true)
                     val item=LibraryChecks(this,::report).fixture("favourite-ui").copy(title="Favourite UI fixture",audioDescription="AAC · 44.1 kHz · Stereo")
                     Store.add(item)
-                    click("Library");click("Compact")
+                    click("Library");libraryOption("Compact")
                     click("More actions for ${item.title}");click("Add to favourites")
                     check(Store.downloads.value.first { it.id==item.id }.favourite)
-                    click("Favourites")
+                    libraryOption("Favourites only")
                     click("More actions for ${item.title}");click("File details")
                     click("Check file again")
                     click("Copy source link")
@@ -699,7 +712,7 @@ class RuntimeChecks : Instrumentation() {
                     click("Close details")
                     click("More actions for ${item.title}");click("Remove from favourites")
                     check(!Store.downloads.value.first { it.id==item.id }.favourite)
-                    click("Favourites")
+                    libraryOption("Favourites only")
                     report("PASS: release Library menu marks/unmarks favourites; filter, details refresh and source-copy controls work through scrolling UI")
                     result.putString("stream","FAVOURITES UI CHECKS PASSED\n");finish(Activity.RESULT_OK,result);return
                 }
@@ -751,7 +764,23 @@ class RuntimeChecks : Instrumentation() {
                     val helper=LibraryChecks(this,::report)
                     val one=helper.fixture("library-ui-one"); val two=helper.fixture("library-ui-two")
                     Store.add(one); Store.add(two)
-                    click("Library"); click("Compact"); click("Select downloads")
+                    click("Library")
+                    check(!visible("Status: All states") && !visible("Compact") && !visible("Favourites only"))
+                    libraryOption("Compact");check(Store.library.value.layout==LibraryLayout.Compact)
+                    libraryOption("Grid");check(Store.library.value.layout==LibraryLayout.Grid)
+                    libraryOption("Small");check(Store.library.value.size==LibrarySize.Small)
+                    libraryOption("Medium");check(Store.library.value.size==LibrarySize.Medium)
+                    libraryOption("Large");check(Store.library.value.size==LibrarySize.Large)
+                    libraryOption("Compact");check(Store.library.value.layout==LibraryLayout.Compact)
+                    uiAutomation.takeScreenshot()?.let {bitmap->java.io.File(targetContext.getExternalFilesDir(null),"library-compact-ui.png").outputStream().use {bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)};bitmap.recycle()}
+                    click("Photos");check(visible("Options (1)"))
+                    libraryOption("Favourites only");check(visible("Options (2)"))
+                    click("Library options");click("Clear filters (2)");click("Done")
+                    check(!visible("Options (2)") && visible("Options") && Store.library.value.layout==LibraryLayout.Compact)
+                    libraryOption("Status: All states","Completed");check(visible("Options (1)"))
+                    click("Library options");click("Clear filters (1)");click("Done")
+                    report("PASS: compact Library hides secondary controls, Options changes grid and sizes, active filter count and Clear filters preserve the saved layout")
+                    click("Select downloads")
                     click("Select ${one.title}"); click("Select ${two.title}")
                     click("Remove history"); click("Keep entries")
                     check(Store.downloads.value.count { it.id in setOf(one.id,two.id) }==2)
@@ -811,13 +840,13 @@ class RuntimeChecks : Instrumentation() {
                     result.putString("stream", "QUEUE UI CHECKS PASSED\n"); finish(Activity.RESULT_OK, result); return
                 }
                 click("Library")
-                click("Grid"); check(Store.library.value.layout == LibraryLayout.Grid)
-                click("Small"); check(Store.library.value.size == LibrarySize.Small)
-                click("Large"); check(Store.library.value.size == LibrarySize.Large)
-                click("Medium"); check(Store.library.value.size == LibrarySize.Medium)
-                click("Compact"); check(Store.library.value.layout == LibraryLayout.Compact)
-                click("List"); check(Store.library.value.layout == LibraryLayout.List)
-                click("Grid"); check(Store.library.value.layout == LibraryLayout.Grid)
+                libraryOption("Grid"); check(Store.library.value.layout == LibraryLayout.Grid)
+                libraryOption("Small"); check(Store.library.value.size == LibrarySize.Small)
+                libraryOption("Large"); check(Store.library.value.size == LibrarySize.Large)
+                libraryOption("Medium"); check(Store.library.value.size == LibrarySize.Medium)
+                libraryOption("Compact"); check(Store.library.value.layout == LibraryLayout.Compact)
+                libraryOption("List"); check(Store.library.value.layout == LibraryLayout.List)
+                libraryOption("Grid"); check(Store.library.value.layout == LibraryLayout.Grid)
                 report("PASS: Library UI switches List/Grid/Compact and Small/Medium/Large using actual on-screen controls")
                 result.putString("stream", "LIBRARY UI CHECKS PASSED\n"); finish(Activity.RESULT_OK, result); return
             }
