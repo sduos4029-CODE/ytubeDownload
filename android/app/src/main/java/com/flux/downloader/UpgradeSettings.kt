@@ -6,8 +6,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import org.json.JSONObject
 
 data class UpgradePreferences(val language:String="",val startAt:Long=0,val chargingOnly:Boolean=false)
-data class PreferenceBackup(val upgraded:UpgradePreferences,val transfer:TransferPreferences,val library:LibraryPreferences,val preset:DownloadPreset) {
-    fun summary()="Audio: ${AudioLanguages.label(upgraded.language)}\nQuality preset: ${preset.label}\nNetwork: ${if(transfer.wifiOnly)"Wi-Fi only" else "Any connected network"}\nPower: ${if(upgraded.chargingOnly)"Charging required" else "Charging optional"}\nParallel downloads: ${transfer.parallel}\nSpeed cap per download: ${DownloadLimits.label(transfer.rateKiB)}\nLibrary: ${library.layout.name} · ${library.size.name} · ${library.sort.name}"
+data class PreferenceBackup(val upgraded:UpgradePreferences,val transfer:TransferPreferences,val library:LibraryPreferences,val preset:DownloadPreset,val named:Pair<List<NamedPreset>,String>?=null) {
+    fun summary()="Audio: ${AudioLanguages.label(upgraded.language)}\nQuality preset: ${named?.let {data->data.first.firstOrNull {it.id==data.second}?.name} ?: preset.label}\nNetwork: ${if(transfer.wifiOnly)"Wi-Fi only" else "Any connected network"}\nPower: ${if(upgraded.chargingOnly)"Charging required" else "Charging optional"}\nParallel downloads: ${transfer.parallel}\nSpeed cap per download: ${DownloadLimits.label(transfer.rateKiB)}\nLibrary: ${library.layout.name} · ${library.size.name} · ${library.sort.name}\nNamed presets: ${named?.let {"${it.first.size} presets will replace saved named presets"} ?: "kept; stock default restored"}"
 }
 
 object UpgradeSettings {
@@ -30,6 +30,7 @@ object UpgradeSettings {
         put("language",preferences.value.language);put("chargingOnly",preferences.value.chargingOnly)
         put("parallel",Store.transfers.value.parallel);put("wifiOnly",Store.transfers.value.wifiOnly)
         put("rateKiB",Store.transfers.value.rateKiB);put("downloadPreset",DownloadPresets.default.value.name)
+        put("namedPresets",JSONObject().put("items",org.json.JSONArray().apply{NamedPresets.items.value.forEach{put(it.json())}}).put("defaultId",NamedPresets.default.value?.id.orEmpty()))
         put("layout",Store.library.value.layout.name);put("size",Store.library.value.size.name);put("sort",Store.library.value.sort.name)
     }.toString(2)
     fun inspectBackup(text:String):PreferenceBackup {
@@ -37,7 +38,7 @@ object UpgradeSettings {
         try {
         val o=JSONObject(text)
         require(o.optString("format")=="flux-preferences" && o.optInt("version")==1) {"Unsupported preference backup."}
-        val allowed=setOf("format","version","language","chargingOnly","parallel","wifiOnly","layout","size","sort","rateKiB","downloadPreset")
+        val allowed=setOf("format","version","language","chargingOnly","parallel","wifiOnly","layout","size","sort","rateKiB","downloadPreset","namedPresets")
         require(o.keys().asSequence().all {it in allowed}) {"Backup contains unsupported fields. Credentials cannot be restored."}
         val upgraded=UpgradePreferences(o.getString("language"),0,o.getBoolean("chargingOnly"))
         require(AudioLanguages.valid(upgraded.language)) {"The backup contains an invalid audio language."}
@@ -45,12 +46,21 @@ object UpgradeSettings {
         require(transfer.parallel in 1..3 && transfer.rateKiB in DownloadLimits.rates){"The backup contains unsupported download limits."}
         val preset=runCatching{DownloadPreset.valueOf(o.optString("downloadPreset","Best"))}.getOrElse{error("The backup contains an unsupported quality preset.")}
         val library=runCatching{LibraryPreferences(LibraryLayout.valueOf(o.getString("layout")),LibrarySize.valueOf(o.getString("size")),LibrarySort.valueOf(o.getString("sort")))}.getOrElse{error("The backup contains unsupported Library display settings.")}
-        return PreferenceBackup(upgraded,transfer,library,preset)
+        val named=o.optJSONObject("namedPresets")?.let {node->
+            require(node.keys().asSequence().all {it in setOf("items","defaultId")}) {"Named preset backup contains unsupported fields."}
+            val items=NamedPresets.decode(node.getJSONArray("items").toString())
+            val id=node.getString("defaultId")
+            require(id.isEmpty() || items.any {it.id==id}) {"Named default preset is missing from this backup."}
+            items to id
+        }
+        require(!o.has("namedPresets") || named!=null) {"Invalid named preset backup."}
+        return PreferenceBackup(upgraded,transfer,library,preset,named)
         }catch(e:org.json.JSONException){throw IllegalArgumentException("Choose a valid Flux preferences backup file.",e)}
     }
     fun restore(context:Context,text:String) {
         val data=inspectBackup(text)
         set(data.upgraded.copy(startAt=preferences.value.startAt));Store.setLibrary(data.library);Store.setTransfers(data.transfer);DownloadPresets.set(data.preset)
+        data.named?.let {NamedPresets.replace(it.first,it.second)}
         Downloads.recover(context)
     }
 }

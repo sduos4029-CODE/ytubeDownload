@@ -156,7 +156,7 @@ private fun FluxApp(shared: String, model: FluxModel = viewModel()) {
                 Text("flux", Modifier.padding(start = 9.dp), fontSize = 29.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-1).sp)
                 Spacer(Modifier.weight(1f))
                 Surface(color = Mint.copy(alpha = .09f), shape = CircleShape) {
-                    Text("YOUR OFFLINE SPACE", color = Mint, fontSize = 9.sp, letterSpacing = 1.sp,
+                    Text(if(BuildConfig.VERSION_NAME.contains("-preview."))"3.0 PREVIEW 1" else "YOUR OFFLINE SPACE", color = Mint, fontSize = 9.sp, letterSpacing = 1.sp,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
                 }
             }
@@ -215,23 +215,42 @@ private fun Discover(model: FluxModel, onBatchQueued: ()->Unit) {
     var batchTask by remember {mutableStateOf<Job?>(null)}
     var batchStatus by remember {mutableStateOf("")}
     var confirmItems by remember { mutableStateOf<List<Video>>(emptyList()) }
+    val isPlaylist=model.results.isNotEmpty() && model.results.all {it.platform==MediaPlatform.YouTube} &&
+        (model.results.any {it.itemCount>1} || PlaylistSelection.isPlaylist(runCatching {Engine.target(model.query)}.getOrDefault("")))
+    var batchPreset by remember {mutableStateOf(BatchPreset(stock=DownloadPresets.default.value,named=NamedPresets.default.value))}
+    var skipSaved by remember {mutableStateOf(true)}
+    var rangeOpen by remember {mutableStateOf(false)}
+    var rangeStart by remember {mutableStateOf("1")};var rangeEnd by remember {mutableStateOf("")};var rangeError by remember {mutableStateOf("")}
+    if(rangeOpen)AlertDialog(onDismissRequest={rangeOpen=false},title={Text("Select playlist range")},text={Column {
+        Text("Positions in the displayed results: 1–${model.results.size}")
+        OutlinedTextField(value=rangeStart,onValueChange={rangeStart=it.take(3)},label={Text("Start item")},singleLine=true,modifier=Modifier.semantics{contentDescription="Start item"})
+        OutlinedTextField(value=rangeEnd,onValueChange={rangeEnd=it.take(3)},label={Text("End item")},singleLine=true,modifier=Modifier.semantics{contentDescription="End item"})
+        if(rangeError.isNotBlank())Text(rangeError)
+    }},confirmButton={TextButton(onClick={runCatching{PlaylistBatch.range(model.results,rangeStart,rangeEnd)}.onSuccess{model.selectedItems=it;rangeOpen=false}.onFailure{rangeError=it.message.orEmpty()}}){Text("Apply range")}},dismissButton={TextButton(onClick={rangeOpen=false}){Text("Keep selection")}})
+
     if(confirmItems.isNotEmpty()) AlertDialog(onDismissRequest={confirmItems=emptyList()},title={Text("Download ${confirmItems.size} items?")},
-        text={Text("Photos keep the best available source image. Videos use the highest reported resolution and best available source audio. Each item has separate progress in Downloads.")},
+        text={Text(if(isPlaylist)"Preset: ${batchPreset.label} · ${if(skipSaved)"skip identical saved choices" else "allow downloads again"}. Items without a matching source format are skipped. Each item has separate progress in Downloads."
+            else "Photos keep the best available source image. Videos use the highest reported resolution and best available source audio. Each item has separate progress in Downloads.")},
         confirmButton={TextButton(onClick={
             val items=confirmItems;confirmItems=emptyList()
+            val choice=if(isPlaylist)batchPreset else null
+            val skip=choice!=null && skipSaved
+            val folder=Store.folder.value;val startAt=UpgradeSettings.preferences.value.startAt
+            val saved=Store.downloads.value.toList()
             batchTask=batchScope.launch {
-                val queued=mutableListOf<Download>();var skipped=0
+                val queued=mutableListOf<Download>();var skipped=0;var alreadySaved=0
                 try {
                     items.take(PlaylistSelection.MAX_ITEMS).forEachIndexed {index,item ->
                         batchStatus="Preparing ${index+1} of ${items.size}"
                         try {
                             val full=if(item.formats.isEmpty())Engine.inspect(context,item) else item
-                            queued.add(MediaDownloads.prepare(full,Store.folder.value))
+                            val plan=choice?.prepare(full,folder,startAt) ?: MediaDownloads.prepare(full,folder).copy(scheduledAt=startAt)
+                            if(skip && PlaylistBatch.saved(context,plan,saved))alreadySaved++ else queued.add(plan)
                         }catch(e:CancellationException){throw e}catch(_:Exception){skipped++}
                     }
                     queued.forEach {Downloads.enqueue(context,it)}
                     model.selectedItems=emptySet()
-                    Toast.makeText(context,"${queued.size} queued · $skipped unavailable items skipped",Toast.LENGTH_LONG).show()
+                    Toast.makeText(context,"${queued.size} queued · $alreadySaved already saved · $skipped unavailable items skipped",Toast.LENGTH_LONG).show()
                     if(queued.isNotEmpty())onBatchQueued()
                 }finally {batchStatus="";batchTask=null}
             }
@@ -287,10 +306,22 @@ private fun Discover(model: FluxModel, onBatchQueued: ()->Unit) {
         if (model.inspecting) item { LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Lilac) }
         if (model.results.isNotEmpty()) {
             item { SectionTitle("Found for you", "${model.results.size} result${if (model.results.size > 1) "s" else ""}") }
-            if(model.results.size>1 && model.results.all { it.itemCount>1 }) item {
+            if(isPlaylist || (model.results.size>1 && model.results.all { it.itemCount>1 })) item {
                 Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
                     Text(if(model.results.first().platform==MediaPlatform.YouTube)"Choose playlist videos" else "Choose photos and videos",fontWeight=FontWeight.Bold)
                     Text("${model.selectedItems.size} selected · ${if(model.results.first().platform==MediaPlatform.YouTube)"first 50 available playlist entries" else "up to 20 items per post"}",color=Muted,fontSize=12.sp)
+                    if(isPlaylist) {
+                        BatchPresetPicker(batchPreset) {batchPreset=it}
+                        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                            Text("Skip identical saved choices",Modifier.weight(1f),fontSize=12.sp)
+                            Switch(checked=skipSaved,onCheckedChange={skipSaved=it})
+                        }
+                        Text("Matches source and chosen format; moved or unavailable files are not skipped.",color=Muted,fontSize=11.sp)
+                        Row {
+                            TextButton(enabled=batchTask==null,onClick={rangeStart="1";rangeEnd=model.results.size.toString();rangeError="";rangeOpen=true}){Text("Select range")}
+                            TextButton(enabled=batchTask==null && model.selectedItems.isNotEmpty(),onClick={model.selectedItems=emptySet()}){Text("Clear selection")}
+                        }
+                    }
                     Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(enabled=batchTask==null,onClick={confirmItems=model.results}) {Text("Download all")}
                         FilledTonalButton(enabled=model.selectedItems.isNotEmpty() && batchTask==null,onClick={confirmItems=model.results.filter { it.key in model.selectedItems }}) {Text("Download selected")}
@@ -352,12 +383,15 @@ private fun VideoCard(video: Video, disabled: Boolean, select: () -> Unit) {
 @Composable
 private fun FormatSheet(video: Video, onDownload: (MediaFormat, MediaFormat?,String) -> Unit) {
     val defaultPreset by DownloadPresets.default.collectAsState()
-    var appliedPreset by remember(video.key){mutableStateOf<DownloadPreset?>(DownloadPresets.default.value)}
+    val namedPresets by NamedPresets.items.collectAsState()
+    val namedDefault by NamedPresets.default.collectAsState()
+    var named by remember(video.key){mutableStateOf(namedDefault)}
+    var appliedPreset by remember(video.key){mutableStateOf<DownloadPreset?>(if(namedDefault==null)DownloadPresets.default.value else null)}
     var presetMenu by remember{mutableStateOf(false)}
-    var audio by remember(video.key) { mutableStateOf(DownloadPresets.default.value.audioOnly) }
+    var audio by remember(video.key) { mutableStateOf(namedDefault?.audioOnly ?: DownloadPresets.default.value.audioOnly) }
     var chosen by remember(video.key, audio) { mutableStateOf<MediaFormat?>(null) }
     val sourceAudios = remember(video.key) { video.formats.filter { it.audio && !it.video }.asReversed().sortedBy { it.isDrc } }
-    var selectedAudio by remember(video.key) { mutableStateOf(AudioSelection.preferred(video)) }
+    var selectedAudio by remember(video.key) { mutableStateOf(AudioSelection.preferred(video,namedDefault?.language ?: UpgradeSettings.preferences.value.language)) }
     var subtitle by remember(video.key) {mutableStateOf("")}
     var subtitleMenu by remember {mutableStateOf(false)}
     var audioMenu by remember { mutableStateOf(false) }
@@ -365,22 +399,24 @@ private fun FormatSheet(video: Video, onDownload: (MediaFormat, MediaFormat?,Str
         if (audio) sourceAudios.sortedBy {if(it.id==AudioSelection.preferred(video)?.id)0 else 1} else video.formats.filter { it.video }
             .sortedWith(compareByDescending<MediaFormat> { it.height }.thenByDescending { it.fps }.thenBy { it.extension })
     }
-    val selected = chosen ?: if(appliedPreset!=null)appliedPreset!!.choose(video) else formats.firstOrNull()
+    val selected = chosen ?: if(named!=null)named!!.choose(video) else if(appliedPreset!=null)appliedPreset!!.choose(video) else formats.firstOrNull()
     Column(Modifier.fillMaxWidth().heightIn(max = LocalConfiguration.current.screenHeightDp.dp * .85f)
         .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).navigationBarsPadding()) {
         Text("Make it yours", fontSize = 25.sp, fontWeight = FontWeight.Bold)
         Text(video.title, color = Muted, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp, bottom = 16.dp))
         Box {
-            OutlinedButton(onClick={presetMenu=true}){Text("Preset: ${appliedPreset?.label?:"Custom selection"}")}
+            OutlinedButton(onClick={presetMenu=true}){Text("Preset: ${named?.name ?: appliedPreset?.label?:"Custom selection"}")}
             DropdownMenu(expanded=presetMenu,onDismissRequest={presetMenu=false}) {
-                DownloadPreset.entries.forEach{option->DropdownMenuItem(text={Text(option.label)},onClick={appliedPreset=option;audio=option.audioOnly;chosen=null;presetMenu=false})}
+                DownloadPreset.entries.forEach{option->DropdownMenuItem(text={Text(option.label)},onClick={named=null;appliedPreset=option;audio=option.audioOnly;chosen=null;selectedAudio=AudioSelection.preferred(video);presetMenu=false})}
+                namedPresets.forEach {preset->DropdownMenuItem(text={Text(preset.name)},onClick={named=preset;appliedPreset=null;audio=preset.audioOnly;chosen=null;selectedAudio=AudioSelection.preferred(video,preset.language);presetMenu=false})}
             }
         }
-        if(appliedPreset!=null && appliedPreset!=defaultPreset)TextButton(onClick={DownloadPresets.set(appliedPreset!!)}){Text("Use this preset by default")}
-        if(appliedPreset!=null && selected==null)Text("No reported source format matches this preset. Choose another preset or a format below.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.error)
+        if(named!=null && named?.id!=namedDefault?.id)TextButton(onClick={NamedPresets.setDefault(named!!.id)}){Text("Use this named preset by default")}
+        if(appliedPreset!=null && (appliedPreset!=defaultPreset || namedDefault!=null))TextButton(onClick={DownloadPresets.set(appliedPreset!!)}){Text("Use this preset by default")}
+        if((appliedPreset!=null || named!=null) && selected==null)Text("No reported source format matches this preset. Choose another preset or a format below.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.error)
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            SegmentedButton(selected = !audio, onClick = { audio = false;appliedPreset=null }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text(if(video.formats.any { it.audio }) "Video + audio" else "Video") }
-            SegmentedButton(selected = audio, onClick = { audio = true;appliedPreset=null }, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("Audio only") }
+            SegmentedButton(selected = !audio, onClick = { audio = false;appliedPreset=null;named=null }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text(if(video.formats.any { it.audio }) "Video + audio" else "Video") }
+            SegmentedButton(selected = audio, onClick = { audio = true;appliedPreset=null;named=null }, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("Audio only") }
         }
         if (!audio && sourceAudios.isNotEmpty()) {
             Text("Audio track", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.padding(top = 16.dp))
@@ -408,9 +444,9 @@ private fun FormatSheet(video: Video, onDownload: (MediaFormat, MediaFormat?,Str
                 val picked = selected?.id == format.id
                 Surface(shape = RoundedCornerShape(14.dp), color = if (picked) Lilac.copy(alpha = .10f) else Ink,
                     border = BorderStroke(1.dp, if (picked) Lilac.copy(alpha = .65f) else Color.Transparent),
-                    modifier = Modifier.fillMaxWidth().clickable { chosen = format;appliedPreset=null }) {
+                    modifier = Modifier.fillMaxWidth().clickable { chosen = format;appliedPreset=null;named=null }) {
                     Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(selected = picked, onClick = { chosen = format;appliedPreset=null })
+                        RadioButton(selected = picked, onClick = { chosen = format;appliedPreset=null;named=null })
                         Column(Modifier.weight(1f)) {
                             Text(format.label, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                             Text("${if(format.video && format.height==0) "Format ${format.id} · " else ""}${format.extension.uppercase()}${if (format.video) " · ${format.codec.takeUnless { it in setOf("","null","none") }?.substringBefore('.') ?: "codec not reported"}" else " · ${format.audioLabel}"} · ${if(format.size>0)sizeLabel(format.size) else "size not reported"}",
@@ -484,7 +520,7 @@ private fun SettingsPage(folder: String, active: Boolean, model: FluxModel, onFo
                 Text("Extractor improvements now arrive with signed app updates. Install updates over Flux to keep your history.", color = Muted, fontSize = 12.sp, lineHeight = 19.sp, modifier = Modifier.padding(top = 8.dp))
                 val context = LocalContext.current
                 TextButton(onClick = {
-                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://flux-apk-download-7c114.royalpin4.chatgpt.site/"))) }
+                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://flux-apk-download-7c114.royalpin4.chatgpt.site/"+if(BuildConfig.VERSION_NAME.contains("-preview."))"v3" else ""))) }
                         .onFailure { Toast.makeText(context, "Open the Flux download page in your browser.", Toast.LENGTH_LONG).show() }
                 }) { Text("Open download page") }
 

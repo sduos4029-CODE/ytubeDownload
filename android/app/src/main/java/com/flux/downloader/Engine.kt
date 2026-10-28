@@ -244,6 +244,7 @@ object Store {
         queuePaused.value = prefs.getBoolean("queue_paused", false)
         transfers.value = TransferPreferences(prefs.getInt("parallel_downloads", 1), prefs.getBoolean("wifi_only", false),prefs.getInt("rate_kib",0)).normalized()
         DownloadPresets.init(context)
+        NamedPresets.init(context)
         UpgradeSettings.init(context)
         NetworkGate.start(context)
         library.value = LibraryPreferences(
@@ -291,6 +292,20 @@ object Store {
         save(true)
         releaseUnusedFolders()
         return removed
+    }
+    @Synchronized fun schedule(ids:Set<String>,time:Long,now:Long=System.currentTimeMillis()):Int {
+        require(ids.isNotEmpty() && ids.size<=100) { "Select between 1 and 100 downloads." }
+        require(time==0L || time>now) { "Choose a future start time." }
+        var count=0
+        mutable.value=mutable.value.map {job->
+            if(job.id in ids && QueueSchedules.eligible(job)) {
+                count++
+                job.copy(scheduledAt=time,detail=if(time==0L)if(job.state=="Paused")"Paused · schedule removed" else "Schedule removed · queue rules apply"
+                    else if(job.state=="Paused")"Paused · scheduled for ${scheduleDescription(time)}" else "Scheduled for ${scheduleDescription(time)}")
+            }else job
+        }
+        if(count>0)save(true)
+        return count
     }
     @Synchronized fun setFolder(uri: String) { folder.value = uri; prefs.edit().putString("folder", uri).apply() }
     @Synchronized fun chooseFolder(context: Context, uri: Uri?) {

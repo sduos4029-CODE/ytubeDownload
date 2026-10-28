@@ -20,6 +20,9 @@ check() {
   adb shell am instrument -w -r "${args[@]}" com.flux.downloader.test/com.flux.downloader.RuntimeChecks | tee "test-results/$mode.log"
   python3 tools/assert-marker.py "test-results/$mode.log" "$marker"
 }
+check v3Only 'V3 CHECKS PASSED'
+adb shell am force-stop com.flux.downloader
+check v3RestartOnly 'V3 RESTART CHECKS PASSED'
 check upgradeOnly 'UPGRADE CHECKS PASSED'
 adb shell am force-stop com.flux.downloader
 check upgradeRestartOnly 'UPGRADE RESTART CHECKS PASSED'
@@ -30,6 +33,7 @@ check serverDiagnosticsOnly 'SERVER DIAGNOSTICS CHECKS PASSED'
 check serverOnly 'SERVER RESOLVER CHECKS PASSED'
 "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks "$ANDROID_USER_HOME/debug.keystore" --ks-key-alias androiddebugkey --ks-pass pass:android --key-pass pass:android --out "$RUNNER_TEMP/flux-release-ui.apk" app/build/outputs/apk/release/app-release-unsigned.apk
 adb install -r "$RUNNER_TEMP/flux-release-ui.apk"
+check v3UiOnly 'V3 UI CHECKS PASSED'
 check serverUiOnly 'SERVER UI CHECKS PASSED'
 check upgradeUiOnly 'UPGRADE UI CHECKS PASSED'
 check mediaToolsUiOnly 'MEDIA TOOLS UI CHECKS PASSED'

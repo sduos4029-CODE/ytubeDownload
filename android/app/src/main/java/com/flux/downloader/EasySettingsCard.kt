@@ -25,6 +25,7 @@ fun UpgradeSettingsCard() {
     val prefs by UpgradeSettings.preferences.collectAsState()
     val transfers by Store.transfers.collectAsState()
     val preset by DownloadPresets.default.collectAsState()
+    val named by NamedPresets.default.collectAsState()
     var language by remember(prefs.language){mutableStateOf(prefs.language)}
     var languageMenu by remember{mutableStateOf(false)}
     var custom by remember{mutableStateOf(false)};var code by remember{mutableStateOf("")};var codeError by remember{mutableStateOf("")}
@@ -82,6 +83,7 @@ fun UpgradeSettingsCard() {
             Text(if(language==prefs.language)"Saved: ${AudioLanguages.label(prefs.language)}" else "Not saved yet. Tap Save audio preference to apply.",style=MaterialTheme.typography.bodySmall)
             TextButton(enabled=!busy && language!=prefs.language,onClick={if(save(prefs.copy(language=language)))message="Audio preference saved: ${AudioLanguages.label(language)}."}){Text("Save audio preference")}
             Text("Uses a matching separate audio track when available. Otherwise Flux keeps the best available source audio; this does not translate speech.",style=MaterialTheme.typography.bodySmall)
+            if(named!=null)Text("Named default ${named!!.name} uses ${AudioLanguages.label(named!!.language)} for its audio preference.",style=MaterialTheme.typography.bodySmall)
             HorizontalDivider()
             Text("2. Choose when new downloads start",style=MaterialTheme.typography.titleSmall)
             Text(if(prefs.startAt>now)"New downloads: ${scheduleDescription(prefs.startAt)}" else "New downloads: As soon as possible")
@@ -105,7 +107,7 @@ fun UpgradeSettingsCard() {
             Text("Android may start later because of network, power or background restrictions.",style=MaterialTheme.typography.bodySmall)
             HorizontalDivider()
             Text("3. Back up your preferences",style=MaterialTheme.typography.titleSmall)
-            Text("Includes audio language, quality preset, Wi-Fi and charging rules, parallel downloads, speed cap and Library layout, size and sort.",style=MaterialTheme.typography.bodySmall)
+            Text("Includes named presets, audio language, quality preset, Wi-Fi and charging rules, parallel downloads, speed cap and Library layout, size and sort.",style=MaterialTheme.typography.bodySmall)
             Text("Does not include downloaded files, history, login details, server settings, folder permissions or schedules. No file editing is needed.",style=MaterialTheme.typography.bodySmall)
             TextButton(enabled=!busy,onClick={runCatching{val text=UpgradeSettings.backup();exportPreview=text to UpgradeSettings.inspectBackup(text)}.onFailure{message=it.message?:"Cannot prepare backup."}}){Text("Export preferences")}
             TextButton(enabled=!busy,onClick={import.launch(arrayOf("application/json","text/plain"))}){Text("Import preferences")}
@@ -119,7 +121,7 @@ fun UpgradeSettingsCard() {
     pendingSchedule?.let{time->AlertDialog(onDismissRequest={pendingSchedule=null},title={Text("Review new-download schedule")},text={
         Column(Modifier.heightIn(max=360.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)) {
             Text("Start after: ${scheduleDescription(time)}")
-            Text("Audio: ${AudioLanguages.label(prefs.language)} when available\nQuality preset: ${preset.label}\n${if(transfers.wifiOnly)"Wi-Fi required" else "Any connected network"}\n${if(prefs.chargingOnly)"Charging required" else "Charging optional"}")
+            Text("Audio: ${AudioLanguages.label(named?.language ?: prefs.language)} when available\nQuality preset: ${named?.name ?: preset.label}\n${if(transfers.wifiOnly)"Wi-Fi required" else "Any connected network"}\n${if(prefs.chargingOnly)"Charging required" else "Charging optional"}")
             Text("Only downloads added after you apply this schedule use it. Existing items keep their times. Android may start later.")
         }
     },confirmButton={TextButton(onClick={pendingSchedule=null;if(time<=System.currentTimeMillis())message="Choose a future start time." else if(save(prefs.copy(startAt=time)))message="Schedule applied to new downloads."}){Text("Apply schedule")}},dismissButton={TextButton(onClick={pendingSchedule=null}){Text("Keep current schedule")}})}

@@ -19,6 +19,9 @@ import java.util.concurrent.Executors
 
 /** Real-device integration checks. Media is generated locally; no third-party video is downloaded. */
 class RuntimeChecks : Instrumentation() {
+    private var v3Only=false
+    private var v3RestartOnly=false
+    private var v3UiOnly=false
     private var mediaToolsOnly=false
     private var mediaToolsRestartOnly=false
     private var mediaToolsUiOnly=false
@@ -65,6 +68,7 @@ class RuntimeChecks : Instrumentation() {
     private var restartOnly = false
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
+        v3Only=arguments?.getString("v3Only")=="true";v3RestartOnly=arguments?.getString("v3RestartOnly")=="true";v3UiOnly=arguments?.getString("v3UiOnly")=="true"
         mediaToolsOnly=arguments?.getString("mediaToolsOnly")=="true"
         mediaToolsRestartOnly=arguments?.getString("mediaToolsRestartOnly")=="true"
         mediaToolsUiOnly=arguments?.getString("mediaToolsUiOnly")=="true"
@@ -115,6 +119,11 @@ class RuntimeChecks : Instrumentation() {
     override fun onStart() {
         val result = Bundle()
         try {
+            if(v3Only || v3RestartOnly) {
+                runBlocking {V3Checks(this@RuntimeChecks,::report).run(v3RestartOnly)}
+                result.putString("stream",if(v3RestartOnly)"V3 RESTART CHECKS PASSED\n" else "V3 CHECKS PASSED\n")
+                finish(Activity.RESULT_OK,result);return
+            }
             if(mediaToolsOnly || mediaToolsRestartOnly) {
                 runBlocking {MediaToolsChecks(this@RuntimeChecks,::report).run(mediaToolsRestartOnly)}
                 result.putString("stream",if(mediaToolsRestartOnly)"MEDIA TOOLS RESTART CHECKS PASSED\n" else "MEDIA TOOLS CHECKS PASSED\n")
@@ -232,7 +241,7 @@ class RuntimeChecks : Instrumentation() {
             val activity = startActivitySync(Intent(targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
             check(!activity.isFinishing) { "Activity did not launch" }
             report("PASS: APK installs and MainActivity launches")
-            if (mediaToolsUiOnly || upgradeUiOnly || serverUiOnly || uiOnly || queueUiOnly || transferUiOnly || libraryUiOnly || progressUiOnly || favouritesUiOnly || repeatUiOnly || libraryToolsUiOnly || platformUiOnly || galleryUiOnly || sessionUiOnly) {
+            if (v3UiOnly || mediaToolsUiOnly || upgradeUiOnly || serverUiOnly || uiOnly || queueUiOnly || transferUiOnly || libraryUiOnly || progressUiOnly || favouritesUiOnly || repeatUiOnly || libraryToolsUiOnly || platformUiOnly || galleryUiOnly || sessionUiOnly) {
                 // UI scenarios own synthetic job states. Drain WorkManager,
                 // including requests restored after a force-stop, first.
                 Store.setQueuePaused(true)
@@ -276,6 +285,69 @@ class RuntimeChecks : Instrumentation() {
                         return (0 until node.childCount).any {find(node.getChild(it))}
                     }
                     return find(uiAutomation.rootInActiveWindow)
+                }
+                if(v3UiOnly) {
+                    fun field(label:String,value:String) {
+                        // Dialog accessibility windows can lag the click. Compose
+                        // may merge the label and description on the edit node.
+                        val deadline=System.currentTimeMillis()+10000
+                        var input:android.view.accessibility.AccessibilityNodeInfo?=null
+                        while(input==null && System.currentTimeMillis()<deadline) {
+                            val edits=mutableListOf<android.view.accessibility.AccessibilityNodeInfo>()
+                            fun collect(node:android.view.accessibility.AccessibilityNodeInfo?) {
+                                if(node==null)return
+                                if(node.isVisibleToUser && node.isEditable)edits.add(node)
+                                for(i in 0 until node.childCount)collect(node.getChild(i))
+                            }
+                            collect(uiAutomation.rootInActiveWindow)
+                            input=edits.firstOrNull {it.contentDescription?.toString()?.contains(label)==true || it.text?.toString()==label}
+                            if(input==null && visible(label)) {
+                                input=if(label=="Preset name")edits.singleOrNull()
+                                    else if(edits.size==2)edits[if(label=="End item")1 else 0] else null
+                            }
+                            if(input==null)Thread.sleep(200)
+                        }
+                        check(input!=null) {"Input not found: $label"}
+                        check(input.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SET_TEXT,Bundle().apply {putCharSequence(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,value)}));Thread.sleep(400)
+                    }
+                    click("Settings");click("Create named preset");field("Preset name","Preview Hindi")
+                    click("Audio only");click("Source format: Any");click("M4A")
+                    click("Preset language: Source default");click("Hindi");click("Save preset")
+                    val preset=NamedPresets.items.value.first {it.name=="Preview Hindi"}
+                    check(preset.audioOnly && preset.extension=="m4a" && preset.language=="hi")
+                    click("Use default: Preview Hindi");check(NamedPresets.default.value?.id==preset.id)
+                    var model:FluxModel?=null
+                    click("Discover")
+                    runOnMainSync {model=ViewModelProvider(activity)[FluxModel::class.java];model!!.query="https://www.youtube.com/watch?v=v3Fixture01";model!!.results=listOf(V3Checks.video())}
+                    click("Choose quality");click("Download 128 kbps")
+                    val single=Store.downloads.value.first {it.title=="V3 single" && it.state=="Paused"}
+                    check(single.selector=="a-hi" && single.audioOnly)
+                    val items=(1..3).map {V3Checks.video("v3Batch00$it","V3 batch $it").copy(itemIndex=it,itemCount=3)}
+                    val file=LibraryChecks(this,::report).fixture("v3-ui-saved-file")
+                    val saved=BatchPreset(named=preset).prepare(items[1],"",0).copy(id="v3-ui-saved",state="Complete",uri=file.uri,mime=file.mime,bytes=file.bytes)
+                    Store.add(saved)
+                    click("Discover")
+                    runOnMainSync {model!!.query="https://www.youtube.com/playlist?list=PL_V3_fixture123";model!!.results=items;model!!.selectedItems=emptySet()}
+                    click("Select range");field("Start item","2");field("End item","3");click("Apply range")
+                    check(model!!.selectedItems==setOf(items[1].key,items[2].key))
+                    click("Download selected");click("Queue items")
+                    runBlocking {withTimeout(15000){while(Store.downloads.value.none {it.title=="V3 batch 3" && it.state=="Paused"})delay(100)}}
+                    val queued=Store.downloads.value.first {it.title=="V3 batch 3" && it.state=="Paused"}
+                    check(queued.selector=="a-hi" && Store.downloads.value.none {it.title=="V3 batch 1" || (it.title=="V3 batch 2" && it.state!="Complete")})
+                    click("Manage schedules");click("Schedule V3 single");click("Schedule V3 batch 3");click("In 1 hour");click("Keep current schedules")
+                    check(Store.downloads.value.first{it.id==single.id}.scheduledAt==single.scheduledAt)
+                    click("In 1 hour");click("Apply to selected")
+                    check(Store.downloads.value.filter{it.id in setOf(single.id,queued.id)}.all {it.state=="Paused" && it.scheduledAt>System.currentTimeMillis()})
+                    click("Schedule download V3 batch 3");click("Remove schedules");click("Confirm remove schedules")
+                    check(Store.downloads.value.first{it.id==queued.id}.scheduledAt==0L && Store.downloads.value.first{it.id==single.id}.scheduledAt>System.currentTimeMillis())
+                    click("Settings");click("Edit preset Preview Hindi");field("Preset name","Preview Hindi edited");click("Save preset")
+                    check(NamedPresets.default.value?.name=="Preview Hindi edited")
+                    click("Delete preset Preview Hindi edited");click("Keep preset");check(NamedPresets.items.value.any{it.id==preset.id})
+                    click("Delete preset Preview Hindi edited");click("Delete preset");check(NamedPresets.items.value.none{it.id==preset.id} && NamedPresets.default.value==null)
+                    check(Store.downloads.value.filter{it.id in setOf(single.id,queued.id)}.all {it.selector=="a-hi"})
+                    listOf(single,queued).forEach {Downloads.cancel(targetContext,it)};Store.removeHistory(setOf(single.id,queued.id,saved.id));DownloadPresets.set(DownloadPreset.Best)
+                    report("PASS: release UI creates/edits/deletes named defaults, applies Hindi M4A to a video and playlist range, skips a matching readable saved choice, and reviews/applies/removes selected schedules without resuming paused jobs")
+                    result.putString("stream","V3 UI CHECKS PASSED\n");finish(Activity.RESULT_OK,result);return
                 }
                 if(mediaToolsUiOnly) {
                     Store.setLibrary(LibraryPreferences(LibraryLayout.List,LibrarySize.Small,LibrarySort.Title))
@@ -957,6 +1029,17 @@ class RuntimeChecks : Instrumentation() {
             result.putString("stream", "ALL RUNTIME CHECKS PASSED\n")
             finish(Activity.RESULT_OK, result)
         } catch (error: Throwable) {
+            if(v3UiOnly)runCatching {
+                // Synthetic CI fixture only; retain a private failure screenshot.
+                uiAutomation.takeScreenshot()?.let {bitmap->java.io.File(targetContext.getExternalFilesDir(null),"v3-ui-failure.png").outputStream().use {bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)};bitmap.recycle()}
+                val tree=StringBuilder()
+                fun describe(node:android.view.accessibility.AccessibilityNodeInfo?,depth:Int=0) {
+                    if(node==null || depth>12 || tree.length>12000)return
+                    if(node.isVisibleToUser)tree.append(" ".repeat(depth)).append("${node.className} editable=${node.isEditable} text=${node.text} desc=${node.contentDescription}\n")
+                    for(i in 0 until node.childCount)describe(node.getChild(i),depth+1)
+                }
+                describe(uiAutomation.rootInActiveWindow);report("V3 synthetic fixture accessibility tree:\n$tree")
+            }
             report("FAIL: ${error.stackTraceToString()}")
             result.putString("stream", "RUNTIME CHECKS FAILED: ${error.message}\n")
             finish(Activity.RESULT_CANCELED, result)
