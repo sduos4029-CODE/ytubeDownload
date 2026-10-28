@@ -21,3 +21,11 @@ fun selectionSummary(jobs: List<Download>): SelectionSummary {
     }
     return SelectionSummary(completed.size, bytes, completed.count { it.bytes <= 0 })
 }
+
+/** The results action affects visible IDs; selections under other filters stay selected. */
+object LibraryResultSelection {
+    fun unselect(shown:Set<String>,selected:Set<String>)=shown.any {it in selected} &&
+        (shown.all {it in selected} || selected.size>=LibraryActions.MAX_SELECTION)
+    fun toggle(shown:Set<String>,selected:Set<String>):Set<String> = if(unselect(shown,selected))selected-shown
+        else selected+shown.filterNot {it in selected}.take((LibraryActions.MAX_SELECTION-selected.size).coerceAtLeast(0))
+}
