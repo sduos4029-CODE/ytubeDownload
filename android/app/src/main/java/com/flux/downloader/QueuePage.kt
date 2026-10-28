@@ -96,7 +96,7 @@ fun QueuePage(jobs: List<Download>) {
                             listOf("Low","Normal","High").forEachIndexed {value,label->DropdownMenuItem(text={Text("$label priority")},onClick={Downloads.priority(context,job,value);priorityMenu=false})}
                         }
                         }
-                        if(QueueSchedules.eligible(job))TextButton(onClick={scheduleIds=setOf(job.id)}) {Text("Schedule")}
+                        if(QueueSchedules.eligible(job))TextButton(onClick={scheduleIds=setOf(job.id)},modifier=Modifier.semantics{contentDescription="Schedule download ${job.title}"}) {Text("Schedule")}
                     }
                     if (job.audioDescription.isNotBlank()) Text("Audio: ${job.audioDescription}", color = colors.secondary,
                         fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 7.dp))

@@ -44,6 +44,8 @@ class V3Checks(private val instrumentation:Instrumentation,private val report:(S
         check(runCatching{audio.copy(name=" ").validated()}.isFailure)
         check(runCatching{audio.copy(extension="exe").validated()}.isFailure)
         check(runCatching{NamedPresets.save(audio.copy(id="v3-duplicate",name="native hindi"))}.isFailure)
+        val tooMany=org.json.JSONArray().apply {(1..21).forEach{put(audio.copy(id="limit-$it",name="Preset $it").json())}}
+        check(runCatching{NamedPresets.decode(tooMany.toString())}.isFailure)
         val items=(1..3).map {video("v3Batch00$it","V3 batch $it").copy(itemIndex=it,itemCount=3)}
         check(PlaylistBatch.range(items,"2","3")==setOf(items[1].key,items[2].key))
         check(runCatching{PlaylistBatch.range(items,"0","3")}.isFailure)

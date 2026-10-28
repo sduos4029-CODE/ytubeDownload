@@ -326,7 +326,7 @@ class RuntimeChecks : Instrumentation() {
                     check(Store.downloads.value.first{it.id==single.id}.scheduledAt==single.scheduledAt)
                     click("In 1 hour");click("Apply to selected")
                     check(Store.downloads.value.filter{it.id in setOf(single.id,queued.id)}.all {it.state=="Paused" && it.scheduledAt>System.currentTimeMillis()})
-                    click("Manage schedules");click("Schedule V3 batch 3");click("Remove schedules");click("Confirm remove schedules")
+                    click("Schedule download V3 batch 3");click("Remove schedules");click("Confirm remove schedules")
                     check(Store.downloads.value.first{it.id==queued.id}.scheduledAt==0L && Store.downloads.value.first{it.id==single.id}.scheduledAt>System.currentTimeMillis())
                     click("Settings");click("Edit preset Preview Hindi");field("Preset name","Preview Hindi edited");click("Save preset")
                     check(NamedPresets.default.value?.name=="Preview Hindi edited")
