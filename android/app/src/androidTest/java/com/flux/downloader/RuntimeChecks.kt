@@ -424,25 +424,76 @@ class RuntimeChecks : Instrumentation() {
                     result.putString("stream","MEDIA TOOLS UI CHECKS PASSED\n");finish(Activity.RESULT_OK,result);return
                 }
                 if(upgradeUiOnly) {
-                    click("Settings");click("Save audio preference")
+                    UpgradeSettings.set(UpgradePreferences());Store.setTransfers(TransferPreferences());DownloadPresets.set(DownloadPreset.Best)
+                    fun screenHas(text:String):Boolean {
+                        fun find(node:android.view.accessibility.AccessibilityNodeInfo?):Boolean {
+                            if(node==null)return false
+                            if(node.text?.toString()?.contains(text)==true)return true
+                            for(i in 0 until node.childCount)if(find(node.getChild(i)))return true
+                            return false
+                        }
+                        return find(uiAutomation.rootInActiveWindow)
+                    }
+                    fun awaitSetting(predicate:()->Boolean) {
+                        val deadline=System.currentTimeMillis()+15000
+                        while(!predicate()){check(System.currentTimeMillis()<deadline){"Settings preview or file operation timed out"};Thread.sleep(100)}
+                    }
+                    click("Settings");click("Audio language: Source default");click("Hindi")
+                    check(UpgradeSettings.preferences.value.language.isEmpty())
+                    click("Save audio preference");check(UpgradeSettings.preferences.value.language=="hi")
+                    val existing=Download(id="settings-existing-schedule",url="https://www.youtube.com/watch?v=Schedule001",title="Existing schedule fixture",thumbnail="",selector="best",label="source",audioOnly=false,duration=6,folder="",state="Paused",scheduledAt=System.currentTimeMillis()+7200000)
+                    Store.add(existing)
+                    click("In 1 hour");check(UpgradeSettings.preferences.value.startAt==0L)
+                    check(screenHas("Review new-download schedule") && screenHas("Audio: Hindi"))
+                    click("Keep current schedule");check(UpgradeSettings.preferences.value.startAt==0L)
+                    click("In 1 hour");click("Apply schedule")
+                    val schedule=UpgradeSettings.preferences.value.startAt
+                    check(schedule-System.currentTimeMillis() in 3500000L..3610000L)
+                    check(Store.downloads.value.first{it.id==existing.id}.scheduledAt==existing.scheduledAt)
+                    fun backupFile(name:String)=targetContext.contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,android.content.ContentValues().apply {
+                        put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME,name);put(android.provider.MediaStore.MediaColumns.MIME_TYPE,"application/json");put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH,"Download/FluxTests")
+                    })!!
+                    val exported=backupFile("Flux settings export fixture.json");val imported=backupFile("Flux settings import fixture.json")
+                    val importText=org.json.JSONObject(UpgradeSettings.backup()).put("language","en").put("parallel",2).put("wifiOnly",true).put("rateKiB",1024).put("downloadPreset","FullHD").toString()
+                    targetContext.contentResolver.openOutputStream(imported,"w")!!.use{it.write(importText.toByteArray())}
                     val documents=mutableListOf<Intent>()
                     val monitor=object:ActivityMonitor() {
                         override fun onStartActivity(intent:Intent):ActivityResult? {
                             if(intent.action in setOf(Intent.ACTION_CREATE_DOCUMENT,Intent.ACTION_OPEN_DOCUMENT)) {
-                                documents.add(intent);return ActivityResult(Activity.RESULT_CANCELED,null)
+                                documents.add(intent);return ActivityResult(Activity.RESULT_OK,Intent().setData(if(intent.action==Intent.ACTION_CREATE_DOCUMENT)exported else imported).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION))
                             }
                             return null
                         }
                     }
                     addMonitor(monitor)
                     try {
-                        click("Export preferences");click("Import preferences")
-                        check(documents.size==2 && documents[0].type=="application/json" && documents[0].getStringExtra(Intent.EXTRA_TITLE)=="Flux-preferences.json")
+                        click("Export preferences")
+                        check(documents.isEmpty() && screenHas("Review preference backup") && screenHas("Audio: Hindi"))
+                        DownloadPresets.set(DownloadPreset.DataSaver)
+                        click("Save backup file")
+                        awaitSetting{runCatching{org.json.JSONObject(targetContext.contentResolver.openInputStream(exported)!!.use{it.bufferedReader().readText()}).optString("downloadPreset")=="Best"}.getOrDefault(false)}
+                        val savedText=targetContext.contentResolver.openInputStream(exported)!!.use{it.bufferedReader().readText()}
+                        check(org.json.JSONObject(savedText).getString("language")=="hi" && !savedText.contains("startAt"))
+                        click("Import preferences");awaitSetting{screenHas("Review preferences to restore")}
+                        check(screenHas("Audio: English") && screenHas("Speed cap per download: 1 MiB/s"))
+                        check(UpgradeSettings.preferences.value.language=="hi" && DownloadPresets.default.value==DownloadPreset.DataSaver)
+                        click("Keep current preferences");check(UpgradeSettings.preferences.value.language=="hi")
+                        click("Import preferences");click("Restore preferences")
+                        awaitSetting{UpgradeSettings.preferences.value.language=="en" && Store.transfers.value.rateKiB==1024 && DownloadPresets.default.value==DownloadPreset.FullHD}
+                        check(DownloadPresets.default.value==DownloadPreset.FullHD && Store.transfers.value.parallel==2 && Store.transfers.value.wifiOnly)
+                        check(UpgradeSettings.preferences.value.startAt==schedule && Store.downloads.value.first{it.id==existing.id}.scheduledAt==existing.scheduledAt)
+                        check(documents.size==3 && documents[0].type=="application/json" && documents[0].getStringExtra(Intent.EXTRA_TITLE)=="Flux-preferences.json")
                         check(documents[1].action==Intent.ACTION_OPEN_DOCUMENT)
-                    }finally {removeMonitor(monitor)}
+                        click("Start new downloads now");check(UpgradeSettings.preferences.value.startAt==0L)
+                        check(Store.downloads.value.first{it.id==existing.id}.scheduledAt==existing.scheduledAt)
+                    }finally {
+                        removeMonitor(monitor);targetContext.contentResolver.delete(exported,null,null);targetContext.contentResolver.delete(imported,null,null)
+                        Downloads.cancel(targetContext,existing);UpgradeSettings.set(UpgradePreferences());Store.setTransfers(TransferPreferences());DownloadPresets.set(DownloadPreset.Best)
+                    }
                     click("Library");click("Collections & file tools");click("Show all collections")
                     click("Collections & file tools");click("Close tools")
                     report("PASS: release audio/schedule/backup settings and Library tools are reachable; export/import use Android document pickers without credential sharing")
+                    report("PASS: named language picker, schedule review/cancel/apply/clear, real backup snapshot export and import preview/cancel/restore preserve current and existing job schedules")
                     result.putString("stream","UPGRADE UI CHECKS PASSED\n");finish(Activity.RESULT_OK,result);return
                 }
                 if(serverUiOnly) {

@@ -15,9 +15,10 @@ object AudioSelection {
     const val BEST = "bestaudio[format_id!*=drc]/bestaudio"
     fun preferred(video:Video,language:String=UpgradeSettings.preferences.value.language):MediaFormat? {
         if(language.isBlank())return null
+        val target=language.replace('_','-')
         val source=video.formats.filter {it.audio && !it.video}.asReversed().sortedBy {it.isDrc}
-        return source.firstOrNull {it.language.equals(language,true)}
-            ?:source.firstOrNull {it.language.substringBefore('-').equals(language.substringBefore('-'),true)}
+        return source.firstOrNull {it.language.replace('_','-').equals(target,true)}
+            ?:source.firstOrNull {it.language.replace('_','-').substringBefore('-').equals(target.substringBefore('-'),true)}
     }
     data class Plan(val selector: String, val replaceEmbeddedAudio: Boolean, val description: String)
     fun plan(video: Video, format: MediaFormat, selectedAudio: MediaFormat? = null): Plan {

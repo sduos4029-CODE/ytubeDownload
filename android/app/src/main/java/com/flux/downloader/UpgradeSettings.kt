@@ -6,6 +6,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import org.json.JSONObject
 
 data class UpgradePreferences(val language:String="",val startAt:Long=0,val chargingOnly:Boolean=false)
+data class PreferenceBackup(val upgraded:UpgradePreferences,val transfer:TransferPreferences,val library:LibraryPreferences,val preset:DownloadPreset) {
+    fun summary()="Audio: ${AudioLanguages.label(upgraded.language)}\nQuality preset: ${preset.label}\nNetwork: ${if(transfer.wifiOnly)"Wi-Fi only" else "Any connected network"}\nPower: ${if(upgraded.chargingOnly)"Charging required" else "Charging optional"}\nParallel downloads: ${transfer.parallel}\nSpeed cap per download: ${DownloadLimits.label(transfer.rateKiB)}\nLibrary: ${library.layout.name} · ${library.size.name} · ${library.sort.name}"
+}
 
 object UpgradeSettings {
     val preferences=MutableStateFlow(UpgradePreferences())
@@ -17,7 +20,7 @@ object UpgradeSettings {
         ChargingGate.start(context)
     }
     fun set(value:UpgradePreferences) {
-        require(value.language.isEmpty() || value.language.matches(Regex("[A-Za-z0-9_-]{2,20}"))) {"Use a language code such as en, hi or en-US."}
+        require(AudioLanguages.valid(value.language)) {"Choose a language, or use a code such as en, hi or en-US."}
         require(value.startAt>=0)
         check(prefs.edit().putString("language",value.language).putLong("startAt",value.startAt).putBoolean("charging",value.chargingOnly).commit())
         preferences.value=value
@@ -29,19 +32,25 @@ object UpgradeSettings {
         put("rateKiB",Store.transfers.value.rateKiB);put("downloadPreset",DownloadPresets.default.value.name)
         put("layout",Store.library.value.layout.name);put("size",Store.library.value.size.name);put("sort",Store.library.value.sort.name)
     }.toString(2)
-    fun restore(context:Context,text:String) {
+    fun inspectBackup(text:String):PreferenceBackup {
         require(text.toByteArray().size<=65536) {"Preference backup is too large."}
+        try {
         val o=JSONObject(text)
         require(o.optString("format")=="flux-preferences" && o.optInt("version")==1) {"Unsupported preference backup."}
         val allowed=setOf("format","version","language","chargingOnly","parallel","wifiOnly","layout","size","sort","rateKiB","downloadPreset")
         require(o.keys().asSequence().all {it in allowed}) {"Backup contains unsupported fields. Credentials cannot be restored."}
         val upgraded=UpgradePreferences(o.getString("language"),0,o.getBoolean("chargingOnly"))
-        require(upgraded.language.isEmpty() || upgraded.language.matches(Regex("[A-Za-z0-9_-]{2,20}")))
+        require(AudioLanguages.valid(upgraded.language)) {"The backup contains an invalid audio language."}
         val transfer=TransferPreferences(o.getInt("parallel"),o.getBoolean("wifiOnly"),o.optInt("rateKiB",0))
-        require(transfer.parallel in 1..3 && transfer.rateKiB in DownloadLimits.rates)
-        val preset=DownloadPreset.valueOf(o.optString("downloadPreset","Best"))
-        val library=LibraryPreferences(LibraryLayout.valueOf(o.getString("layout")),LibrarySize.valueOf(o.getString("size")),LibrarySort.valueOf(o.getString("sort")))
-        set(upgraded);Store.setLibrary(library);Store.setTransfers(transfer);DownloadPresets.set(preset)
+        require(transfer.parallel in 1..3 && transfer.rateKiB in DownloadLimits.rates){"The backup contains unsupported download limits."}
+        val preset=runCatching{DownloadPreset.valueOf(o.optString("downloadPreset","Best"))}.getOrElse{error("The backup contains an unsupported quality preset.")}
+        val library=runCatching{LibraryPreferences(LibraryLayout.valueOf(o.getString("layout")),LibrarySize.valueOf(o.getString("size")),LibrarySort.valueOf(o.getString("sort")))}.getOrElse{error("The backup contains unsupported Library display settings.")}
+        return PreferenceBackup(upgraded,transfer,library,preset)
+        }catch(e:org.json.JSONException){throw IllegalArgumentException("Choose a valid Flux preferences backup file.",e)}
+    }
+    fun restore(context:Context,text:String) {
+        val data=inspectBackup(text)
+        set(data.upgraded.copy(startAt=preferences.value.startAt));Store.setLibrary(data.library);Store.setTransfers(data.transfer);DownloadPresets.set(data.preset)
         Downloads.recover(context)
     }
 }
