@@ -26,20 +26,22 @@ object UpgradeSettings {
         put("format","flux-preferences");put("version",1)
         put("language",preferences.value.language);put("chargingOnly",preferences.value.chargingOnly)
         put("parallel",Store.transfers.value.parallel);put("wifiOnly",Store.transfers.value.wifiOnly)
+        put("rateKiB",Store.transfers.value.rateKiB);put("downloadPreset",DownloadPresets.default.value.name)
         put("layout",Store.library.value.layout.name);put("size",Store.library.value.size.name);put("sort",Store.library.value.sort.name)
     }.toString(2)
     fun restore(context:Context,text:String) {
         require(text.toByteArray().size<=65536) {"Preference backup is too large."}
         val o=JSONObject(text)
         require(o.optString("format")=="flux-preferences" && o.optInt("version")==1) {"Unsupported preference backup."}
-        val allowed=setOf("format","version","language","chargingOnly","parallel","wifiOnly","layout","size","sort")
+        val allowed=setOf("format","version","language","chargingOnly","parallel","wifiOnly","layout","size","sort","rateKiB","downloadPreset")
         require(o.keys().asSequence().all {it in allowed}) {"Backup contains unsupported fields. Credentials cannot be restored."}
         val upgraded=UpgradePreferences(o.getString("language"),0,o.getBoolean("chargingOnly"))
         require(upgraded.language.isEmpty() || upgraded.language.matches(Regex("[A-Za-z0-9_-]{2,20}")))
-        val transfer=TransferPreferences(o.getInt("parallel"),o.getBoolean("wifiOnly"))
-        require(transfer.parallel in 1..3)
+        val transfer=TransferPreferences(o.getInt("parallel"),o.getBoolean("wifiOnly"),o.optInt("rateKiB",0))
+        require(transfer.parallel in 1..3 && transfer.rateKiB in DownloadLimits.rates)
+        val preset=DownloadPreset.valueOf(o.optString("downloadPreset","Best"))
         val library=LibraryPreferences(LibraryLayout.valueOf(o.getString("layout")),LibrarySize.valueOf(o.getString("size")),LibrarySort.valueOf(o.getString("sort")))
-        set(upgraded);Store.setLibrary(library);Store.setTransfers(transfer)
+        set(upgraded);Store.setLibrary(library);Store.setTransfers(transfer);DownloadPresets.set(preset)
         Downloads.recover(context)
     }
 }

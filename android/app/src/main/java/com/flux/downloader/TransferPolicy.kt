@@ -7,8 +7,18 @@ import android.net.NetworkCapabilities
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-data class TransferPreferences(val parallel: Int = 1, val wifiOnly: Boolean = false) {
-    fun normalized() = copy(parallel = parallel.coerceIn(1, 3))
+data class TransferPreferences(val parallel: Int = 1, val wifiOnly: Boolean = false, val rateKiB:Int=0) {
+    fun normalized() = copy(parallel = parallel.coerceIn(1, 3),rateKiB=rateKiB.takeIf{it in DownloadLimits.rates}?:0)
+}
+
+object DownloadLimits {
+    val rates=listOf(0,256,512,1024,2048,5120,10240)
+    fun label(rate:Int)=if(rate==0)"Unlimited" else if(rate<1024)"$rate KiB/s" else "${rate/1024} MiB/s"
+    fun apply(request:com.yausername.youtubedl_android.YoutubeDLRequest,prefs:TransferPreferences) {
+        val rate=prefs.normalized().rateKiB
+        request.addOption("--concurrent-fragments",if(rate>0)"1" else "3")
+        if(rate>0)request.addOption("--limit-rate",(rate*1024).toString())
+    }
 }
 
 object NetworkGate {

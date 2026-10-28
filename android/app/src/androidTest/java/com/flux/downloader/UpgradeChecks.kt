@@ -20,6 +20,9 @@ class UpgradeChecks(private val instrumentation:Instrumentation,private val repo
     suspend fun run(restart:Boolean=false) {
         Store.init(app)
         if(restart) {
+            check(DownloadPresets.default.value==DownloadPreset.DataSaver && Store.transfers.value.rateKiB==512)
+            check(Store.downloads.value.first{it.id=="upgrade-future"}.priority==2)
+            DownloadPresets.set(DownloadPreset.Best)
             val saved=Store.downloads.value.first {it.id=="upgrade-verified"}
             check(saved.collection=="Travel" && saved.tags=="trip, Hindi" && saved.verification.contains("verified"))
             check(LibraryDetails.inspect(app,saved).name!!.startsWith("Flux trip 001"))
@@ -34,7 +37,19 @@ class UpgradeChecks(private val instrumentation:Instrumentation,private val repo
         val base=Download(id="upgrade-future",url="https://www.youtube.com/watch?v=Upgraded01",title="Future item",thumbnail="",selector="best",label="source",audioOnly=false,duration=6,folder="",scheduledAt=System.currentTimeMillis()+3600000)
         check(QueueRules.next(listOf(base),System.currentTimeMillis())==null)
         check(QueueRules.next(listOf(base),base.scheduledAt)==base)
-        Store.add(base.copy(state="Paused"))
+        Store.add(base.copy(state="Paused",priority=2))
+        val normal=base.copy(id="normal",scheduledAt=0,queueOrder=1)
+        val high=normal.copy(id="high",priority=2,queueOrder=20)
+        check(QueueRules.next(listOf(normal,high),System.currentTimeMillis())==high)
+        check(QueueRules.next(listOf(normal,high.copy(scheduledAt=base.scheduledAt)),System.currentTimeMillis())==normal)
+        check(QueueRules.next(listOf(normal,high.copy(state="Retrying",nextAttemptAt=base.scheduledAt)),System.currentTimeMillis())==normal)
+        check(Download.from(high.json())==high && Download.from(high.json().apply{remove("priority")}).priority==1)
+        val capped=YoutubeDLRequest("https://www.youtube.com/watch?v=Upgraded01")
+        DownloadLimits.apply(capped,TransferPreferences(rateKiB=1024))
+        check(capped.getOption("--limit-rate")=="1048576" && capped.getOption("--concurrent-fragments")=="1")
+        val uncapped=YoutubeDLRequest("https://www.youtube.com/watch?v=Upgraded01")
+        DownloadLimits.apply(uncapped,TransferPreferences())
+        check(!uncapped.hasOption("--limit-rate") && uncapped.getOption("--concurrent-fragments")=="3")
         check(StorageBudget.required(100)==StorageBudget.RESERVE+300)
         check(StorageBudget.required(0)==null && StorageBudget.required(Long.MAX_VALUE)==null)
         UpgradeSettings.set(UpgradePreferences("hi",0,true));ChargingGate.simulate(false);check(!ChargingGate.allowed())
@@ -43,6 +58,14 @@ class UpgradeChecks(private val instrumentation:Instrumentation,private val repo
         val en=MediaFormat("a-en","m4a",0,0,128,20,false,true,"none","mp4a",language="en")
         val hi=en.copy(id="a-hi",language="hi")
         val video=Video("Upgraded01","Language test","Flux","",6,listOf(vf,en,hi))
+        val presetVideo=video.copy(formats=video.formats+listOf(vf.copy(id="hd",height=1080),vf.copy(id="uhd",height=2160)))
+        check(DownloadPreset.Best.choose(presetVideo)?.height==2160)
+        check(DownloadPreset.FullHD.choose(presetVideo)?.height==1080 && DownloadPreset.DataSaver.choose(presetVideo)?.height==360)
+        check(DownloadPreset.Audio.choose(presetVideo)?.id=="a-hi")
+        check(DownloadPreset.DataSaver.choose(video.copy(formats=listOf(vf.copy(height=0))))==null)
+        check(DownloadPreset.DataSaver.choose(video.copy(formats=listOf(vf.copy(height=1080))))==null)
+        check(DownloadPreset.FullHD.choose(video.copy(formats=listOf(vf.copy(width=1080,height=1920))))!=null)
+        report("PASS: source-aware presets respect resolution caps and preferred audio; priorities honor schedules/retry eligibility and legacy migration; speed caps set bytes/sec and serialize fragments")
         check(AudioSelection.preferred(video)?.id=="a-hi")
         check(AudioSelection.preferred(video,"fr")==null)
         val prepared=MediaDownloads.prepare(video,"");check(prepared.selector=="v+a-hi" && prepared.expectedBytes==120L && prepared.expectsAudio)
@@ -64,6 +87,7 @@ class UpgradeChecks(private val instrumentation:Instrumentation,private val repo
         check(runCatching{SubtitleTracks.apply(request,"en,all")}.isFailure)
         report("PASS: playlist canonical video selection/dedup/private filtering and manual-subtitle HTTPS/language validation with native embed/remux request options")
         subtitleIntegration()
+        speedCapIntegration()
         val combined=instrumentation.context.assets.open("combined.mp4").use {it.readBytes()}
         val a=persist("Upgrade original A.mp4",combined);val b=persist("Upgrade original B.mp4",combined)
         val silent=persist("Upgrade silent.mp4",instrumentation.context.assets.open("video.mp4").use {it.readBytes()})
@@ -89,13 +113,52 @@ class UpgradeChecks(private val instrumentation:Instrumentation,private val repo
         val before=UpgradeSettings.preferences.value
         check(runCatching{UpgradeSettings.restore(app,JSONObject(backup).put("serverKey","must-not-restore").toString())}.isFailure)
         check(UpgradeSettings.preferences.value==before)
+        check(runCatching{UpgradeSettings.restore(app,JSONObject(backup).put("rateKiB",7).toString())}.isFailure)
+        check(runCatching{UpgradeSettings.restore(app,JSONObject(backup).put("downloadPreset","Unknown").toString())}.isFailure)
         check(runCatching{UpgradeSettings.restore(app,JSONObject(backup).put("layout","Invalid").toString())}.isFailure)
         check(UpgradeSettings.preferences.value==before)
         UpgradeSettings.restore(app,json.put("parallel",2).put("layout","Grid").toString())
         check(Store.transfers.value.parallel==2 && Store.library.value.layout==LibraryLayout.Grid)
+        UpgradeSettings.restore(app,JSONObject(backup).put("rateKiB",1024).put("downloadPreset","FullHD").toString())
+        check(Store.transfers.value.rateKiB==1024 && DownloadPresets.default.value==DownloadPreset.FullHD)
+        UpgradeSettings.restore(app,JSONObject(backup).apply{remove("rateKiB");remove("downloadPreset")}.toString())
+        check(Store.transfers.value.rateKiB==0 && DownloadPresets.default.value==DownloadPreset.Best)
         Store.setLibrary(LibraryPreferences());Store.setTransfers(TransferPreferences())
         UpgradeSettings.set(UpgradePreferences("hi",System.currentTimeMillis()+3600000,true))
+        DownloadPresets.set(DownloadPreset.DataSaver);Store.setTransfers(TransferPreferences(rateKiB=512))
         report("PASS: allowlisted preference export/restore excludes credentials, addresses, folder grants and schedules; invalid backups cannot partially change preferences")
+    }
+    private suspend fun speedCapIntegration()=withContext(Dispatchers.IO) {
+        Engine.initialize(app)
+        val payload=ByteArray(2*1024*1024){(it%251).toByte()}
+        val server=ServerSocket(0,10,java.net.InetAddress.getByName("127.0.0.1"))
+        val pool=Executors.newCachedThreadPool()
+        pool.execute {while(!server.isClosed)try {
+            val socket=server.accept();pool.execute {runCatching{socket.use {connection->
+                val reader=connection.getInputStream().bufferedReader();val method=reader.readLine().substringBefore(' ')
+                while(!reader.readLine().isNullOrEmpty()){}
+                connection.getOutputStream().apply{write("HTTP/1.1 200 OK\r\nContent-Type: video/mp4\r\nContent-Length: ${payload.size}\r\nConnection: close\r\n\r\n".toByteArray());if(method!="HEAD")write(payload);flush()}
+            }}}
+        }catch(_:Exception){}}
+        val work=File(app.noBackupFilesDir,"speed-cap-check").apply{mkdirs()}
+        try {
+            val info=File(work,"info.json").apply{writeText(JSONObject().put("id","CapCheck01").put("title","Generated transport fixture").put("extractor","generic").put("extractor_key","Generic").put("webpage_url","https://www.youtube.com/watch?v=CapCheck01")
+                .put("formats",JSONArray().put(JSONObject().put("format_id","source").put("url","http://127.0.0.1:${server.localPort}/source.mp4").put("ext","mp4").put("vcodec","avc1").put("acodec","none"))).toString())}
+            fun transfer(rate:Int):Long {
+                val output=File(work,"media-$rate.mp4")
+                val request=Engine.secureOptions(YoutubeDLRequest(emptyList<String>())).apply {
+                    addOption("--load-info-json",info.absolutePath);addOption("--format","source");addOption("--output",output.absolutePath)
+                    addOption("--socket-timeout","10");addOption("--retries","0");DownloadLimits.apply(this,TransferPreferences(rateKiB=rate))
+                }
+                val began=android.os.SystemClock.elapsedRealtime();YoutubeDL.getInstance().execute(request)
+                val elapsed=android.os.SystemClock.elapsedRealtime()-began
+                check(output.readBytes().contentEquals(payload)){"Rate-limited transport changed bytes"}
+                return elapsed
+            }
+            val unlimited=transfer(0);val limited=transfer(256)
+            check(limited>=5500 && limited>=unlimited+3000){"Speed cap did not slow the native transfer: unlimited=$unlimited limited=$limited"}
+            report("PASS: real native 2MiB transport honors 256KiB/s cap versus unlimited and preserves every source byte ($limited ms vs $unlimited ms)")
+        }finally{server.close();pool.shutdownNow();work.deleteRecursively()}
     }
     private suspend fun scheduleIntegration(bytes:ByteArray) {
         UpgradeSettings.set(UpgradePreferences("hi"));Store.setTransfers(TransferPreferences())

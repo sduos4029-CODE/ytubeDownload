@@ -180,7 +180,7 @@ private class DownloadTask(
                 addOption("--progress"); addOption("--progress-template", TransferProgress.TEMPLATE)
                 addOption("--continue"); addOption("--part"); addOption("--abort-on-unavailable-fragments")
                 addOption("--socket-timeout", "30"); addOption("--retries", "2"); addOption("--fragment-retries", "2")
-                addOption("--concurrent-fragments", "3"); addOption("--format", job.selector)
+                DownloadLimits.apply(this,Store.transfers.value); addOption("--format", job.selector)
                 if (!job.audioOnly && !job.isPhoto) addOption("--merge-output-format", "mkv")
                 if (job.replaceEmbeddedAudio) {
                     addOption("--audio-multistreams")

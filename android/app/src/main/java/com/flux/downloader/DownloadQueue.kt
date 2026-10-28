@@ -14,6 +14,7 @@ object QueueRules {
     val busyStates = setOf("Downloading", "Merging", "Saving", "Verifying", "Editing", "Pausing")
     val runnableStates = setOf("Queued", "Retrying")
     const val MAX_RETRIES = 3
+    val order=compareByDescending<Download>{it.priority.coerceIn(0,2)}.thenBy{it.queueOrder}.thenBy{it.created}.thenBy{it.id}
     fun retryDelay(retry: Int): Long = 30_000L * (1L shl (retry - 1).coerceIn(0, 2))
     fun transient(message: String): Boolean {
         val text = message.lowercase()
@@ -22,7 +23,7 @@ object QueueRules {
     }
     fun next(jobs: List<Download>, now: Long): Download? = jobs.filter {
         !it.isLocalEdit && it.state in runnableStates && it.scheduledAt<=now && (it.state != "Retrying" || it.nextAttemptAt <= now)
-    }.minWithOrNull(compareBy<Download> { it.queueOrder }.thenBy { it.created }.thenBy { it.id })
+    }.minWithOrNull(order)
 }
 
 object Downloads {
@@ -121,8 +122,14 @@ object Downloads {
     }
     fun next(context: Context, job: Download) {
         Store.change(job.id, durable = true) {
-            if (it.state in QueueRules.runnableStates) it.copy(queueOrder = Store.firstQueueOrder() - 1) else it
+            if (it.state in QueueRules.runnableStates) it.copy(priority=2,queueOrder = Store.firstQueueOrder() - 1) else it
         }
+        if(job.isLocalEdit)MediaEdits.kick(context) else kick(context)
+    }
+
+    fun priority(context:Context,job:Download,value:Int) {
+        require(value in 0..2)
+        Store.change(job.id,true){if(it.state in QueueRules.runnableStates+setOf("Paused"))it.copy(priority=value) else it}
         if(job.isLocalEdit)MediaEdits.kick(context) else kick(context)
     }
 

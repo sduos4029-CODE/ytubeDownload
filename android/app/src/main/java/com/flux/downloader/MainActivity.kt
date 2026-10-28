@@ -351,7 +351,10 @@ private fun VideoCard(video: Video, disabled: Boolean, select: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FormatSheet(video: Video, onDownload: (MediaFormat, MediaFormat?,String) -> Unit) {
-    var audio by remember(video.key) { mutableStateOf(false) }
+    val defaultPreset by DownloadPresets.default.collectAsState()
+    var appliedPreset by remember(video.key){mutableStateOf<DownloadPreset?>(DownloadPresets.default.value)}
+    var presetMenu by remember{mutableStateOf(false)}
+    var audio by remember(video.key) { mutableStateOf(DownloadPresets.default.value.audioOnly) }
     var chosen by remember(video.key, audio) { mutableStateOf<MediaFormat?>(null) }
     val sourceAudios = remember(video.key) { video.formats.filter { it.audio && !it.video }.asReversed().sortedBy { it.isDrc } }
     var selectedAudio by remember(video.key) { mutableStateOf(AudioSelection.preferred(video)) }
@@ -362,14 +365,22 @@ private fun FormatSheet(video: Video, onDownload: (MediaFormat, MediaFormat?,Str
         if (audio) sourceAudios.sortedBy {if(it.id==AudioSelection.preferred(video)?.id)0 else 1} else video.formats.filter { it.video }
             .sortedWith(compareByDescending<MediaFormat> { it.height }.thenByDescending { it.fps }.thenBy { it.extension })
     }
-    val selected = chosen ?: formats.firstOrNull()
+    val selected = chosen ?: if(appliedPreset!=null)appliedPreset!!.choose(video) else formats.firstOrNull()
     Column(Modifier.fillMaxWidth().heightIn(max = LocalConfiguration.current.screenHeightDp.dp * .85f)
         .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).navigationBarsPadding()) {
         Text("Make it yours", fontSize = 25.sp, fontWeight = FontWeight.Bold)
         Text(video.title, color = Muted, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp, bottom = 16.dp))
+        Box {
+            OutlinedButton(onClick={presetMenu=true}){Text("Preset: ${appliedPreset?.label?:"Custom selection"}")}
+            DropdownMenu(expanded=presetMenu,onDismissRequest={presetMenu=false}) {
+                DownloadPreset.entries.forEach{option->DropdownMenuItem(text={Text(option.label)},onClick={appliedPreset=option;audio=option.audioOnly;chosen=null;presetMenu=false})}
+            }
+        }
+        if(appliedPreset!=null && appliedPreset!=defaultPreset)TextButton(onClick={DownloadPresets.set(appliedPreset!!)}){Text("Use this preset by default")}
+        if(appliedPreset!=null && selected==null)Text("No reported source format matches this preset. Choose another preset or a format below.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.error)
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            SegmentedButton(selected = !audio, onClick = { audio = false }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text(if(video.formats.any { it.audio }) "Video + audio" else "Video") }
-            SegmentedButton(selected = audio, onClick = { audio = true }, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("Audio only") }
+            SegmentedButton(selected = !audio, onClick = { audio = false;appliedPreset=null }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text(if(video.formats.any { it.audio }) "Video + audio" else "Video") }
+            SegmentedButton(selected = audio, onClick = { audio = true;appliedPreset=null }, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("Audio only") }
         }
         if (!audio && sourceAudios.isNotEmpty()) {
             Text("Audio track", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.padding(top = 16.dp))
@@ -397,9 +408,9 @@ private fun FormatSheet(video: Video, onDownload: (MediaFormat, MediaFormat?,Str
                 val picked = selected?.id == format.id
                 Surface(shape = RoundedCornerShape(14.dp), color = if (picked) Lilac.copy(alpha = .10f) else Ink,
                     border = BorderStroke(1.dp, if (picked) Lilac.copy(alpha = .65f) else Color.Transparent),
-                    modifier = Modifier.fillMaxWidth().clickable { chosen = format }) {
+                    modifier = Modifier.fillMaxWidth().clickable { chosen = format;appliedPreset=null }) {
                     Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(selected = picked, onClick = { chosen = format })
+                        RadioButton(selected = picked, onClick = { chosen = format;appliedPreset=null })
                         Column(Modifier.weight(1f)) {
                             Text(format.label, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                             Text("${if(format.video && format.height==0) "Format ${format.id} · " else ""}${format.extension.uppercase()}${if (format.video) " · ${format.codec.takeUnless { it in setOf("","null","none") }?.substringBefore('.') ?: "codec not reported"}" else " · ${format.audioLabel}"} · ${if(format.size>0)sizeLabel(format.size) else "size not reported"}",
@@ -451,6 +462,7 @@ private fun SettingsPage(folder: String, active: Boolean, model: FluxModel, onFo
         ServerConnectionCard()
         InstagramConnectionCard()
         TransferSettingsCard()
+        DownloadPresetSettingsCard()
         UpgradeSettingsCard()
         Surface(color = Panel, shape = RoundedCornerShape(20.dp)) {
             Column(Modifier.padding(18.dp)) {
