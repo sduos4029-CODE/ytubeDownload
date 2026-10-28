@@ -91,7 +91,7 @@ object Engine {
             lease?.let {request.addOption("--cookies",it.file.absolutePath);it.userAgent?.let {agent -> request.addOption("--user-agent",agent)}}
             val result = YoutubeDL.getInstance().execute(request)
             val json = JSONObject(result.out)
-            if (MediaLinks.isInstagram(target)) return@withContext InstagramPost.parse(json,target)
+            if (MediaLinks.isInstagram(target) || MediaLinks.isThreads(target)) return@withContext InstagramPost.parse(json,target)
             if(PlaylistSelection.isPlaylist(target))return@withContext PlaylistSelection.parse(json)
             val entries = json.optJSONArray("entries")
             if (entries == null) listOf(Video.from(json, target)) else buildList {
@@ -114,8 +114,8 @@ object Engine {
         try {
             lease?.let {request.addOption("--cookies",it.file.absolutePath);it.userAgent?.let {agent -> request.addOption("--user-agent",agent)}}
             val json=JSONObject(YoutubeDL.getInstance().execute(request).out)
-            if (MediaLinks.isInstagram(video.url)) InstagramPost.parse(json,video.url).firstOrNull { it.id==video.id }
-                ?: error("This Instagram item is no longer available. Load the post again.")
+            if (MediaLinks.isInstagram(video.url) || MediaLinks.isThreads(video.url)) InstagramPost.parse(json,video.url).firstOrNull { it.id==video.id }
+                ?: error("This post item is no longer available. Load the post again.")
             else Video.from(json,video.url)
         } finally {lease?.close()}
     }
@@ -172,7 +172,7 @@ data class Video(val id: String, val title: String, val author: String, val thum
                 text("uploader") ?: text("channel") ?: text("uploader_id") ?: platform.label,
                 o.optString("thumbnail").takeIf { it.startsWith("https://") }
                     ?: if(platform==MediaPlatform.YouTube) "https://i.ytimg.com/vi/$id/hqdefault.jpg" else "", o.optDouble("duration", 0.0).toLong(),
-                (0 until formats.length()).mapNotNull { formats.optJSONObject(it)?.let { format -> MediaFormat.from(format,platform==MediaPlatform.Instagram) } }
+                (0 until formats.length()).mapNotNull { formats.optJSONObject(it)?.let { format -> MediaFormat.from(format,platform!=MediaPlatform.YouTube) } }
                     .filter { it.id.isNotBlank() && (it.video || it.audio) && it.extension !in listOf("mhtml", "none") },link?.url.orEmpty(),platform,o.optString("flux_media_kind","video"),subtitleLanguages=SubtitleTracks.languages(o))
         }
     }

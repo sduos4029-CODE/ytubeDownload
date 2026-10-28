@@ -1,0 +1,9 @@
+# Flux 2.5.2 — Public Threads posts
+
+Threads.com and Threads.net direct public post links are accepted in Discover and Android sharing. Tracking parameters are removed and links normalize to threads.com. The app retrieves the public Threads page directly, matches the exact shortcode and author, and ignores recommended posts. No third-party downloader, login or configured Flux server is used for Threads.
+
+Public videos, photos and mixed carousels (up to 20 items) reuse thumbnail previews, quality selection, item selection, transfer progress, pause/retry, save, history and download-again. Downloads retrieve fresh source URLs and select the original item by identity, including after carousel reordering. Missing selected items fail instead of substituting another image/video. Source MP4 audio is preserved without transcoding.
+
+Media URLs must be HTTPS Meta CDN addresses without credentials or alternate ports. Existing HTTPS-only transport and pinned-extractor SHA-256 verification remain active. No new permissions or dependencies. Unknown video dimensions remain “Source video”; cover-image dimensions never label video resolution. Profiles, Stories and login-required posts remain outside scope. Public access can still be limited or page markup can change.
+
+Verification includes bundled offline extraction, exact author/shortcode matching, unrelated-post exclusion, missing item rejection, mixed photo/video processing, HTTPS CDN validation, Android native Python extraction and release UI selected-item queueing. The reported post De_9zN7CQ8d was retrieved live through the same bundled extractor: thumbnail present; complete 3,905,210-byte MP4; H.264 720×1280 and AAC audio; 30.624 seconds. The SHA-256 matches the earlier independent website download. This is one observed success, not certification for all Threads posts or phone networks. Instagram retrieval/hosting remains unchanged.

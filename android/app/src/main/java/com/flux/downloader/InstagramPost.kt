@@ -5,7 +5,7 @@ import org.json.JSONObject
 object InstagramPost {
     const val MAX_ITEMS = 20
     fun parse(json: JSONObject, url: String): List<Video> {
-        require(MediaLinks.isInstagram(url)) { "Use a public Instagram post link." }
+        require(MediaLinks.isInstagram(url) || MediaLinks.isThreads(url)) { "Use a public Instagram or Threads post link." }
         val entries = json.optJSONArray("entries")
         val nodes = if(entries == null) listOf(json) else {
             require(entries.length() in 1..MAX_ITEMS) { "This post must contain between 1 and 20 items." }
@@ -36,7 +36,7 @@ object MediaDownloads {
         return Download(url=video.url,title=video.title,thumbnail=video.thumbnail,selector=plan.selector,
             label=format.label,audioOnly=!video.isPhoto && !format.video,duration=video.seconds,folder=folder,
             replaceEmbeddedAudio=plan.replaceEmbeddedAudio,audioDescription=plan.description,mediaKind=video.mediaKind,
-            mediaId=if(video.platform==MediaPlatform.Instagram) video.id else "",
+            mediaId=if(video.platform!=MediaPlatform.YouTube) video.id else "",
             scheduledAt=UpgradeSettings.preferences.value.startAt,
             expectedBytes=StorageBudget.estimate(format,chosenAudio,format.video && video.formats.any {it.audio && !it.video}),
             expectsAudio=!video.isPhoto && (format.audio || (format.video && video.formats.any {it.audio})))

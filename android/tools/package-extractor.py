@@ -14,14 +14,18 @@ upstream = Path(sys.argv[1]).read_bytes()
 assert hashlib.sha256(upstream).hexdigest() == UPSTREAM_SHA256, 'Unreviewed upstream artifact'
 policy = (root / 'tools/flux_network_policy.py').read_text()
 instagram = (root / 'tools/flux_instagram.py').read_text()
+threads = (root / 'tools/flux_threads.py').read_text()
 for variant in ('main', 'debug'):
     out = io.BytesIO()
     with zipfile.ZipFile(io.BytesIO(upstream)) as source, zipfile.ZipFile(out, 'w') as target:
         for info in source.infolist():
             data = source.read(info.filename)
             if info.filename == '__main__.py':
-                data = data.replace(b"    yt_dlp.main()", b"    import flux_network_policy\n    flux_network_policy.install()\n    import flux_instagram\n    flux_instagram.install()\n    yt_dlp.main()")
+                data = data.replace(b"    yt_dlp.main()", b"    import flux_network_policy\n    flux_network_policy.install()\n    import flux_instagram\n    flux_instagram.install()\n    import flux_threads\n    flux_threads.install()\n    yt_dlp.main()")
             target.writestr(info, data)
+        thread_info = zipfile.ZipInfo('flux_threads.py', (2026, 10, 28, 0, 0, 0))
+        thread_info.compress_type = zipfile.ZIP_DEFLATED
+        target.writestr(thread_info, threads)
         extra = zipfile.ZipInfo('flux_instagram.py', (2026, 10, 26, 0, 0, 0))
         extra.compress_type = zipfile.ZIP_DEFLATED
         target.writestr(extra, instagram)

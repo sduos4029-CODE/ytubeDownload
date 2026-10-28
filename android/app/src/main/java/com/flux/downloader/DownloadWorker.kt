@@ -177,6 +177,10 @@ private class DownloadTask(
                         addOption("--extractor-args", "instagram:flux_item_id=${job.mediaId}")
                     } else addOption("--playlist-items", "1")
                 }
+                if(MediaLinks.isThreads(job.url) && job.mediaId.isNotBlank()) {
+                    require(job.mediaId.matches(Regex("[A-Za-z0-9_-]{1,100}"))) { "Invalid Threads item identity. Load the post again." }
+                    addOption("--extractor-args", "FluxThreads:flux_item_id=${job.mediaId}")
+                }
                 addOption("--progress"); addOption("--progress-template", TransferProgress.TEMPLATE)
                 addOption("--continue"); addOption("--part"); addOption("--abort-on-unavailable-fragments")
                 addOption("--socket-timeout", "30"); addOption("--retries", "2"); addOption("--fragment-retries", "2")
