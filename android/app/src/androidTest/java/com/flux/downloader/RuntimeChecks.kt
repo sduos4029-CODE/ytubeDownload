@@ -288,14 +288,26 @@ class RuntimeChecks : Instrumentation() {
                 }
                 if(v3UiOnly) {
                     fun field(label:String,value:String) {
-                        fun find(node:android.view.accessibility.AccessibilityNodeInfo?,scoped:Boolean=false):android.view.accessibility.AccessibilityNodeInfo? {
-                            if(node==null)return null
-                            val inside=scoped || node.contentDescription?.toString()==label
-                            if(node.isVisibleToUser && node.isEditable && inside)return node
-                            for(i in 0 until node.childCount){val result=find(node.getChild(i),inside);if(result!=null)return result}
-                            return null
+                        // Dialog accessibility windows can lag the click. Compose
+                        // may merge the label and description on the edit node.
+                        val deadline=System.currentTimeMillis()+10000
+                        var input:android.view.accessibility.AccessibilityNodeInfo?=null
+                        while(input==null && System.currentTimeMillis()<deadline) {
+                            val edits=mutableListOf<android.view.accessibility.AccessibilityNodeInfo>()
+                            fun collect(node:android.view.accessibility.AccessibilityNodeInfo?) {
+                                if(node==null)return
+                                if(node.isVisibleToUser && node.isEditable)edits.add(node)
+                                for(i in 0 until node.childCount)collect(node.getChild(i))
+                            }
+                            collect(uiAutomation.rootInActiveWindow)
+                            input=edits.firstOrNull {it.contentDescription?.toString()?.contains(label)==true || it.text?.toString()==label}
+                            if(input==null && visible(label)) {
+                                input=if(label=="Preset name")edits.singleOrNull()
+                                    else if(edits.size==2)edits[if(label=="End item")1 else 0] else null
+                            }
+                            if(input==null)Thread.sleep(200)
                         }
-                        val input=find(uiAutomation.rootInActiveWindow) ?: error("Input not found: $label")
+                        check(input!=null) {"Input not found: $label"}
                         check(input.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SET_TEXT,Bundle().apply {putCharSequence(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,value)}));Thread.sleep(400)
                     }
                     click("Settings");click("Create named preset");field("Preset name","Preview Hindi")
@@ -1017,6 +1029,17 @@ class RuntimeChecks : Instrumentation() {
             result.putString("stream", "ALL RUNTIME CHECKS PASSED\n")
             finish(Activity.RESULT_OK, result)
         } catch (error: Throwable) {
+            if(v3UiOnly)runCatching {
+                // Synthetic CI fixture only; retain a private failure screenshot.
+                uiAutomation.takeScreenshot()?.let {bitmap->java.io.File(targetContext.getExternalFilesDir(null),"v3-ui-failure.png").outputStream().use {bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)};bitmap.recycle()}
+                val tree=StringBuilder()
+                fun describe(node:android.view.accessibility.AccessibilityNodeInfo?,depth:Int=0) {
+                    if(node==null || depth>12 || tree.length>12000)return
+                    if(node.isVisibleToUser)tree.append(" ".repeat(depth)).append("${node.className} editable=${node.isEditable} text=${node.text} desc=${node.contentDescription}\n")
+                    for(i in 0 until node.childCount)describe(node.getChild(i),depth+1)
+                }
+                describe(uiAutomation.rootInActiveWindow);report("V3 synthetic fixture accessibility tree:\n$tree")
+            }
             report("FAIL: ${error.stackTraceToString()}")
             result.putString("stream", "RUNTIME CHECKS FAILED: ${error.message}\n")
             finish(Activity.RESULT_CANCELED, result)
