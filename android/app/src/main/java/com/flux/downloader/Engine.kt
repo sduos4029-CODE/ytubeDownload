@@ -191,7 +191,7 @@ data class Download(
     val scheduledAt:Long=0, val expectedBytes:Long=0, val expectsAudio:Boolean=false,
     val subtitleLanguage:String="", val verification:String="", val collection:String="", val tags:String="",
     val editOperation:String="",val editPreset:String="",val editQuality:String="",val editSourceUri:String="",val editSourceFolder:String="",
-    val editStart:Double=0.0,val editEnd:Double=0.0,val editSegments:String=""
+    val editStart:Double=0.0,val editEnd:Double=0.0,val editSegments:String="",val priority:Int=1
 ) {
     val isLocalEdit get()=editOperation.isNotBlank()
     val isPhoto get() = mediaKind == "photo" || mime.startsWith("image/")
@@ -208,7 +208,7 @@ data class Download(
         put("scheduledAt",scheduledAt);put("expectedBytes",expectedBytes);put("expectsAudio",expectsAudio);put("subtitleLanguage",subtitleLanguage)
         put("verification",verification);put("collection",collection);put("tags",tags)
         put("editOperation",editOperation);put("editPreset",editPreset);put("editQuality",editQuality);put("editSourceUri",editSourceUri);put("editSourceFolder",editSourceFolder)
-        put("editStart",editStart);put("editEnd",editEnd);put("editSegments",editSegments)
+        put("editStart",editStart);put("editEnd",editEnd);put("editSegments",editSegments);put("priority",priority.coerceIn(0,2))
     }
     companion object {
         fun from(o: JSONObject) = Download(o.getString("id"), o.getString("url"), o.getString("title"),
@@ -220,7 +220,7 @@ data class Download(
             o.optLong("scheduledAt",0).coerceAtLeast(0),o.optLong("expectedBytes",0).coerceAtLeast(0),o.optBoolean("expectsAudio",false),
             o.optString("subtitleLanguage",""),o.optString("verification",""),o.optString("collection",""),o.optString("tags",""),
             o.optString("editOperation",""),o.optString("editPreset",""),o.optString("editQuality",""),o.optString("editSourceUri",""),o.optString("editSourceFolder",""),
-            o.optDouble("editStart",0.0),o.optDouble("editEnd",0.0),o.optString("editSegments",""))
+            o.optDouble("editStart",0.0),o.optDouble("editEnd",0.0),o.optString("editSegments",""),o.optInt("priority",1).coerceIn(0,2))
     }
 }
 
@@ -241,7 +241,8 @@ object Store {
         prefs = context.getSharedPreferences("flux", Context.MODE_PRIVATE)
         folder.value = prefs.getString("folder", "").orEmpty()
         queuePaused.value = prefs.getBoolean("queue_paused", false)
-        transfers.value = TransferPreferences(prefs.getInt("parallel_downloads", 1), prefs.getBoolean("wifi_only", false)).normalized()
+        transfers.value = TransferPreferences(prefs.getInt("parallel_downloads", 1), prefs.getBoolean("wifi_only", false),prefs.getInt("rate_kib",0)).normalized()
+        DownloadPresets.init(context)
         UpgradeSettings.init(context)
         NetworkGate.start(context)
         library.value = LibraryPreferences(
@@ -300,7 +301,7 @@ object Store {
     @Synchronized fun setTransfers(value: TransferPreferences) {
         val settings = value.normalized()
         transfers.value = settings
-        prefs.edit().putInt("parallel_downloads", settings.parallel).putBoolean("wifi_only", settings.wifiOnly).commit()
+        prefs.edit().putInt("parallel_downloads", settings.parallel).putBoolean("wifi_only", settings.wifiOnly).putInt("rate_kib",settings.rateKiB).commit()
         Downloads.recover(appContext)
     }
     @Synchronized fun nextQueueOrder(): Long = maxOf(System.currentTimeMillis(), (mutable.value.maxOfOrNull { it.queueOrder } ?: 0L) + 1)

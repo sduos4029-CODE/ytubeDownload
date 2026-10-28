@@ -23,7 +23,7 @@ class MediaEditWorker(context:Context,params:WorkerParameters):CoroutineWorker(c
         }
         while(!Store.queuePaused.value) {
             currentCoroutineContext().ensureActive()
-            val job=Store.downloads.value.filter {it.isLocalEdit && it.state=="Queued"}.minByOrNull {it.queueOrder}?:break
+            val job=Store.downloads.value.filter {it.isLocalEdit && it.state=="Queued"}.minWithOrNull(QueueRules.order)?:break
             setForeground(foreground(job.id,job.title))
             process(job)
         }

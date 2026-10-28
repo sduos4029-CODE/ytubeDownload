@@ -18,6 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 fun TransferSettingsCard() {
     val prefs by Store.transfers.collectAsState()
     val colors = MaterialTheme.colorScheme
+    var rateMenu by remember{mutableStateOf(false)}
     Surface(color = colors.surface, shape = RoundedCornerShape(20.dp)) {
         Column(Modifier.padding(18.dp)) {
             Icon(Icons.Rounded.Tune, null, tint = colors.primary)
@@ -39,6 +40,14 @@ fun TransferSettingsCard() {
             }
             Text("Wi-Fi can also be metered. Check your network's data plan.", color = colors.onSurfaceVariant,
                 fontSize = 10.sp, modifier = Modifier.padding(top = 6.dp))
+            Text("Speed cap per download",fontWeight=FontWeight.SemiBold,modifier=Modifier.padding(top=14.dp))
+            Box {
+                OutlinedButton(onClick={rateMenu=true}){Text("Speed cap: ${DownloadLimits.label(prefs.rateKiB)}")}
+                DropdownMenu(expanded=rateMenu,onDismissRequest={rateMenu=false}) {
+                    DownloadLimits.rates.forEach{rate->DropdownMenuItem(text={Text(DownloadLimits.label(rate))},onClick={Store.setTransfers(prefs.copy(rateKiB=rate));rateMenu=false})}
+                }
+            }
+            Text("Approximate media-transfer cap. Applies when a download starts or resumes; pause/resume active items to change it. Parallel items each have their own cap. Local editing and metadata lookups are unaffected.",color=colors.onSurfaceVariant,fontSize=11.sp,lineHeight=16.sp)
         }
     }
 }

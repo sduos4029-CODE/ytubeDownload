@@ -18,6 +18,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 
 @Composable
 fun QueuePage(jobs: List<Download>) {
@@ -28,8 +30,8 @@ fun QueuePage(jobs: List<Download>) {
     val colors = MaterialTheme.colorScheme
     var confirmCancel by remember { mutableStateOf(false) }
     val ordered = jobs.sortedWith(compareBy<Download> { when (it.state) {
-        in QueueRules.busyStates -> 0; "Queued" -> 1; "Retrying" -> 2; else -> 3
-    } }.thenBy { it.queueOrder })
+        in QueueRules.busyStates -> 0; "Queued", "Retrying" -> 1; else -> 3
+    } }.then(QueueRules.order))
     val waiting = ordered.filter { it.state in QueueRules.runnableStates }
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
@@ -47,6 +49,7 @@ fun QueuePage(jobs: List<Download>) {
             }
             Text("Resume depends on the source. Some streams restart; temporary network errors retry up to three times.",
                 color = colors.onSurfaceVariant, fontSize = 11.sp, lineHeight = 16.sp, modifier = Modifier.padding(top = 12.dp))
+            Text("Eligible High priority items start first; current transfers continue. Download next raises an item to High. Speed cap per download: ${DownloadLimits.label(transfers.rateKiB)}.",color=colors.onSurfaceVariant,fontSize=11.sp,modifier=Modifier.padding(top=8.dp))
         }
         if (jobs.isEmpty()) item {
             Column(Modifier.fillMaxWidth().padding(vertical = 55.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -58,6 +61,7 @@ fun QueuePage(jobs: List<Download>) {
         items(ordered, key = { it.id }) { job ->
             Surface(color = colors.surface, shape = RoundedCornerShape(20.dp)) {
                 Column(Modifier.padding(16.dp)) {
+                    var priorityMenu by remember(job.id){mutableStateOf(false)}
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(72.dp, 55.dp), contentAlignment = Alignment.Center) {
                             Icon(if (job.audioOnly) Icons.Rounded.Headphones else Icons.Rounded.VideoLibrary, null, tint = colors.primary)
@@ -82,6 +86,12 @@ fun QueuePage(jobs: List<Download>) {
                     ProgressPanel(job)
                     if(job.isLocalEdit)Text("Local export · pause/interruption restarts this edit; original stays unchanged.",fontSize=10.sp,color=colors.onSurfaceVariant)
                     Text(job.detail, color = colors.onSurfaceVariant, fontSize = 11.sp, lineHeight = 16.sp, modifier = Modifier.padding(top = 10.dp))
+                    if(job.state in QueueRules.runnableStates+setOf("Paused"))Box {
+                        TextButton(onClick={priorityMenu=true},modifier=Modifier.semantics{contentDescription="Priority for ${job.title}"}){Text("${listOf("Low","Normal","High")[job.priority.coerceIn(0,2)]} priority")}
+                        DropdownMenu(expanded=priorityMenu,onDismissRequest={priorityMenu=false}) {
+                            listOf("Low","Normal","High").forEachIndexed {value,label->DropdownMenuItem(text={Text("$label priority")},onClick={Downloads.priority(context,job,value);priorityMenu=false})}
+                        }
+                    }
                     if (job.audioDescription.isNotBlank()) Text("Audio: ${job.audioDescription}", color = colors.secondary,
                         fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 7.dp))
                     Row(Modifier.fillMaxWidth().padding(top = 5.dp), horizontalArrangement = Arrangement.End) {
