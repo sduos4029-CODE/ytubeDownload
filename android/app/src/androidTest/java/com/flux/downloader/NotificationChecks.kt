@@ -29,13 +29,24 @@ class NotificationChecks(private val instrumentation:Instrumentation,private val
         val manager=app.getSystemService(NotificationManager::class.java)
         manager.notify(job.id.hashCode(),NotificationCompat.Builder(app,"downloads").setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentTitle(job.title).setOngoing(true).setProgress(0,0,true).build())
+        val deadline=System.currentTimeMillis()+5000
+        while(manager.activeNotifications.firstOrNull {it.id==job.id.hashCode()}?.notification?.smallIcon?.resId!=android.R.drawable.stat_sys_download) {
+            check(System.currentTimeMillis()<deadline) { "Legacy animated notification was not posted" };Thread.sleep(50)
+        }
         DownloadNotices.reconcile(app)
         posted(job,"Complete")
         report("PASS: reopening repairs a legacy completed notification that retained the animated icon and indeterminate progress")
     }
     fun posted(job:Download,state:String) {
-        val notification=app.getSystemService(NotificationManager::class.java).activeNotifications.firstOrNull {it.id==job.id.hashCode()}?.notification
-            ?: error("No $state notification was posted")
+        val manager=app.getSystemService(NotificationManager::class.java)
+        val deadline=System.currentTimeMillis()+5000
+        var notice:Notification?=null
+        while(System.currentTimeMillis()<deadline) {
+            notice=manager.activeNotifications.firstOrNull {it.id==job.id.hashCode()}?.notification
+            if(notice?.extras?.getString(DownloadNotices.STATE)==state && notice?.smallIcon?.resId==DownloadNotices.icon(state,false))break
+            Thread.sleep(50)
+        }
+        val notification=notice ?: error("No $state notification was posted")
         check(notification.extras.getString(DownloadNotices.STATE)==state)
         check(notification.smallIcon.resId==DownloadNotices.icon(state,false))
         check(notification.flags and Notification.FLAG_ONGOING_EVENT==0)
