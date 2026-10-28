@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,6 +52,7 @@ fun libraryJobs(jobs: List<Download>, query: String, kind: String, sort: Library
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryPage(jobs: List<Download>, onRetry: (Download) -> Unit, onDownloadAgain: (Download) -> Unit, onShowDownloads: () -> Unit) {
     val prefs by Store.library.collectAsState()
@@ -60,7 +62,8 @@ fun LibraryPage(jobs: List<Download>, onRetry: (Download) -> Unit, onDownloadAga
     var sortMenu by remember { mutableStateOf(false) }
     var favouritesOnly by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf(LibraryStatus.All) }
-    var statusMenu by remember { mutableStateOf(false) }
+    var options by remember {mutableStateOf(false)}
+    var searchOpen by rememberSaveable {mutableStateOf(false)}
     var toolsId by remember {mutableStateOf<String?>(null)}
     var detailsId by remember { mutableStateOf<String?>(null) }
     var repeatId by remember { mutableStateOf<String?>(null) }
@@ -148,6 +151,11 @@ fun LibraryPage(jobs: List<Download>, onRetry: (Download) -> Unit, onDownloadAga
             }
         }
     }
+    val filterCount=libraryFilterCount(query,kind,favouritesOnly,status,collectionFilter)
+    fun clearFilters() {query="";kind="All";favouritesOnly=false;status=LibraryStatus.All;collectionFilter=""}
+    if(options)LibraryOptionsSheet(prefs,favouritesOnly,status,filterCount,{favouritesOnly=it},{status=it},::clearFilters,{options=false}) {
+        LibraryOrganisationPanel(jobs,selected,collectionFilter) {collectionFilter=it;options=false}
+    }
     val colors = MaterialTheme.colorScheme
     val columns = if (prefs.layout == LibraryLayout.Grid) GridCells.Adaptive(when (prefs.size) {
         LibrarySize.Small -> 128.dp; LibrarySize.Medium -> 176.dp; LibrarySize.Large -> 256.dp
@@ -176,68 +184,39 @@ fun LibraryPage(jobs: List<Download>, onRetry: (Download) -> Unit, onDownloadAga
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 6.dp))
         }
     }
-    LazyVerticalGrid(columns = columns, contentPadding = PaddingValues(20.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.weight(1f)) {
-        item(span = { GridItemSpan(maxLineSpan) }) {
-            Column {
-                Text("Your offline collection", fontSize = 27.sp, fontWeight = FontWeight.Bold)
-                LibraryOrganisationPanel(jobs,selected,collectionFilter) {collectionFilter=it}
-                if(collectionFilter.isNotBlank())Text("Collection: $collectionFilter")
-                if (!selecting && shown.isNotEmpty()) TextButton(onClick = { selecting = true }) { Text("Select downloads") }
-                Text("${jobs.count { it.state == "Complete" }} saved · arrange it your way", color = colors.onSurfaceVariant,
-                    fontSize = 12.sp, modifier = Modifier.padding(top = 7.dp, bottom = 16.dp))
-                OutlinedTextField(value = query, onValueChange = { query = it }, singleLine = true,
-                    placeholder = { Text("Search your library") }, leadingIcon = { Icon(Icons.Rounded.Search, null) },
-                    trailingIcon = { if (query.isNotBlank()) IconButton(onClick = { query = "" }) { Icon(Icons.Rounded.Close, "Clear search") } },
-                    modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp))
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    listOf("All", "Video", "Audio", "Photos").forEach { option ->
-                        FilterChip(selected = kind == option, onClick = { kind = option }, label = { Text(option) })
-                    }
-                    Box {
-                        OutlinedButton(onClick = { sortMenu = true }, contentPadding = PaddingValues(horizontal = 12.dp)) {
-                            Icon(Icons.Rounded.Sort, null, Modifier.size(17.dp)); Spacer(Modifier.width(5.dp)); Text(prefs.sort.label)
-                        }
-                        DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
-                            LibrarySort.entries.forEach { option -> DropdownMenuItem(text = { Text(option.label) }, onClick = {
-                                Store.setLibrary(prefs.copy(sort = option)); sortMenu = false
-                            }) }
-                        }
-                    }
-                }
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = favouritesOnly, onClick = { favouritesOnly = !favouritesOnly },
-                        label = { Text("Favourites") }, leadingIcon = { Icon(Icons.Rounded.Favorite, null, Modifier.size(17.dp)) })
-                    Box {
-                        OutlinedButton(onClick = { statusMenu = true }, contentPadding = PaddingValues(horizontal = 12.dp)) {
-                            Icon(Icons.Rounded.FilterList, null, Modifier.size(17.dp)); Spacer(Modifier.width(5.dp)); Text("Status: ${status.label}")
-                        }
-                        DropdownMenu(expanded = statusMenu, onDismissRequest = { statusMenu = false }) {
-                            LibraryStatus.entries.forEach { option -> DropdownMenuItem(text = { Text(option.label) }, onClick = {
-                                status = option; statusMenu = false
-                            }) }
-                        }
-                    }
-                }
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    LibraryLayout.entries.forEach { layout ->
-                        FilterChip(selected = prefs.layout == layout, onClick = { Store.setLibrary(prefs.copy(layout = layout)) },
-                            label = { Text(layout.name) }, leadingIcon = { Icon(when (layout) {
-                                LibraryLayout.List -> Icons.Rounded.ViewList; LibraryLayout.Grid -> Icons.Rounded.GridView
-                                LibraryLayout.Compact -> Icons.Rounded.ViewHeadline
-                            }, null, Modifier.size(17.dp)) })
-                    }
-                }
-                if (prefs.layout != LibraryLayout.Compact) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Card size", color = colors.onSurfaceVariant, fontSize = 12.sp, modifier = Modifier.padding(end = 4.dp))
-                    LibrarySize.entries.forEach { size -> FilterChip(selected = prefs.size == size,
-                        onClick = { Store.setLibrary(prefs.copy(size = size)) }, label = { Text(size.name) }) }
-                }
+    Column(Modifier.fillMaxWidth().padding(horizontal=16.dp)) {
+        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+            Text("Library",fontSize=25.sp,fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f))
+            IconButton(onClick={searchOpen=!searchOpen}) {Icon(Icons.Rounded.Search,"Search library")}
+            if(!selecting && shown.isNotEmpty())IconButton(onClick={selecting=true}) {Icon(Icons.Rounded.Checklist,"Select downloads")}
+        }
+        if(searchOpen || query.isNotBlank())OutlinedTextField(value=query,onValueChange={query=it},singleLine=true,
+            placeholder={Text("Search your library")},leadingIcon={Icon(Icons.Rounded.Search,null)},
+            trailingIcon={IconButton(onClick={query="";searchOpen=false}) {Icon(Icons.Rounded.Close,"Clear search")}},
+            modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp))
+        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+            listOf("All","Video","Audio","Photos").forEach {option->
+                FilterChip(selected=kind==option,onClick={kind=option},label={Text(option,fontSize=12.sp)},modifier=Modifier.weight(1f))
             }
         }
+        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+            Box {
+                TextButton(onClick={sortMenu=true},contentPadding=PaddingValues(horizontal=4.dp)) {
+                    Text(prefs.sort.label,fontSize=12.sp);Icon(Icons.Rounded.ArrowDropDown,null,Modifier.size(18.dp))
+                }
+                DropdownMenu(expanded=sortMenu,onDismissRequest={sortMenu=false}) {
+                    LibrarySort.entries.forEach {option->DropdownMenuItem(text={Text(option.label)},onClick={Store.setLibrary(prefs.copy(sort=option));sortMenu=false})}
+                }
+            }
+            Text("${shown.size} results",color=colors.onSurfaceVariant,fontSize=11.sp,modifier=Modifier.weight(1f).padding(start=8.dp))
+            TextButton(onClick={options=true},modifier=Modifier.semantics {contentDescription="Library options"}) {
+                Icon(Icons.Rounded.Tune,null,Modifier.size(18.dp));Spacer(Modifier.width(5.dp));Text(if(filterCount>0)"Options ($filterCount)" else "Options",fontSize=12.sp)
+            }
+        }
+    }
+    LazyVerticalGrid(columns=columns,contentPadding=PaddingValues(horizontal=16.dp,vertical=8.dp),
+        horizontalArrangement=Arrangement.spacedBy(10.dp),verticalArrangement=Arrangement.spacedBy(if(prefs.layout==LibraryLayout.Compact)6.dp else 10.dp),
+        modifier=Modifier.weight(1f)) {
         if (shown.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
             Column(Modifier.fillMaxWidth().padding(vertical = 42.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(Icons.Rounded.VideoLibrary, null, tint = colors.primary, modifier = Modifier.size(42.dp))
@@ -245,6 +224,7 @@ fun LibraryPage(jobs: List<Download>, onRetry: (Download) -> Unit, onDownloadAga
                     fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 15.dp))
                 Text(if (jobs.isEmpty()) "Find a video in Discover to save it." else "Try another title or filter.",
                     color = colors.onSurfaceVariant, fontSize = 12.sp, modifier = Modifier.padding(top = 7.dp))
+                if(filterCount>0)TextButton(onClick=::clearFilters) {Text("Clear filters ($filterCount)")}
             }
         }
         items(shown, key = { it.id }) { job -> LibraryCard(job, prefs, onRetry, selecting, job.id in selected,

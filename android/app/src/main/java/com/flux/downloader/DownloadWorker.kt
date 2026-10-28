@@ -101,9 +101,9 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         manager.createNotificationChannel(NotificationChannel("downloads", "Downloads", NotificationManager.IMPORTANCE_LOW))
         val open = PendingIntent.getActivity(applicationContext, 0, Intent(applicationContext, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val text = if (!TransferGate.allowed()) "${TransferGate.reason} · partial data kept" else "Up to ${Store.transfers.value.parallel} simultaneous downloads"
-        val notice = NotificationCompat.Builder(applicationContext, "downloads").setSmallIcon(android.R.drawable.stat_sys_download)
+        val notice = NotificationCompat.Builder(applicationContext, "downloads").setSmallIcon(R.drawable.ic_notice_wait)
             .setContentTitle("Flux download queue").setContentText(text).setContentIntent(open).setOnlyAlertOnce(true)
-            .setOngoing(true).setProgress(0, 0, true).build()
+            .setOngoing(true).build()
         return if (Build.VERSION.SDK_INT >= 29) ForegroundInfo(710014, notice, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
         else ForegroundInfo(710014, notice)
     }
@@ -213,7 +213,8 @@ private class DownloadTask(
             checkControl()
             val measuredAudio = if(job.isPhoto) "" else inspectSavedAudio(uri)
             if (!Store.finishDownload(jobId, uri.toString(), mime, result.length(), measuredAudio)) throw UserStopped()
-            post(notification(job.title, "Download complete", 100, false))
+            runCatching {post(notification(job.title, "Download complete", 100, false))}
+            Unit
         } catch (cancel: CancellationException) {
             withContext(NonCancellable) { settleStopped() }
             throw cancel
@@ -445,9 +446,11 @@ private class DownloadTask(
     }.getOrDefault("")
 
     private fun post(notification: Notification) {
+        val state=notification.extras.getString(DownloadNotices.STATE)
+        if(state!=null && Store.downloads.value.find {it.id==jobId}?.state!=state)return
         if (Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(applicationContext,
                 Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
-            manager.notify(notificationId, notification)
+            runCatching {manager.notify(notificationId, notification)}
         }
     }
 
@@ -459,19 +462,23 @@ private class DownloadTask(
     private fun notification(title: String, detail: String, percent: Int, ongoing: Boolean, indeterminate: Boolean = false): Notification {
         manager.createNotificationChannel(NotificationChannel("downloads", "Downloads", NotificationManager.IMPORTANCE_LOW))
         val open = PendingIntent.getActivity(applicationContext, 0, Intent(applicationContext, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        return NotificationCompat.Builder(applicationContext, "downloads")
-            .setSmallIcon(android.R.drawable.stat_sys_download).setContentTitle(title).setContentText(detail)
-            .setContentIntent(open).setOnlyAlertOnce(true).setOngoing(ongoing).setAutoCancel(!ongoing)
-            .apply {
-                if (ongoing) {
-                    setProgress(100, percent, indeterminate)
-                    addAction(android.R.drawable.ic_media_pause, "Pause", action("PAUSE"))
-                    addAction(android.R.drawable.ic_delete, "Cancel", action("CANCEL"))
-                } else if (Store.downloads.value.find { it.id == jobId }?.state == "Paused") {
-                    addAction(android.R.drawable.ic_media_play, "Resume", action("RESUME"))
-                }
-            }
-            .build()
+        val job=Store.downloads.value.find {it.id==jobId}
+        val state=job?.state ?: "Queued"
+        val running=ongoing && state in DownloadNotices.activeStates
+        val text=if(ongoing && !running)when(state) {
+            "Complete" -> "Download complete"
+            "Paused","Pausing" -> "Paused · downloaded data kept"
+            else -> job?.detail ?: detail
+        } else detail
+        val builder=NotificationCompat.Builder(applicationContext,"downloads")
+            .setContentTitle(title).setContentText(text).setContentIntent(open).setOnlyAlertOnce(true)
+        DownloadNotices.style(builder,state,running,percent,indeterminate)
+        if(running) {
+            builder.addAction(android.R.drawable.ic_media_pause,"Pause",action("PAUSE"))
+            builder.addAction(android.R.drawable.ic_delete,"Cancel",action("CANCEL"))
+        }else if(state=="Paused")builder.addAction(android.R.drawable.ic_media_play,"Resume",action("RESUME"))
+        job?.let {DownloadNotices.addCompletedActions(applicationContext,builder,it)}
+        return builder.build()
     }
 }
 

@@ -36,7 +36,7 @@ class MediaEditWorker(context:Context,params:WorkerParameters):CoroutineWorker(c
         val cancel=PendingIntent.getBroadcast(applicationContext,id.hashCode(),Intent(applicationContext,DownloadActionReceiver::class.java)
             .setAction("com.flux.downloader.CANCEL").setData(Uri.parse("flux://download/$id/local-cancel")).putExtra("job",id),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val open=PendingIntent.getActivity(applicationContext,0,Intent(applicationContext,MainActivity::class.java),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val notice=NotificationCompat.Builder(applicationContext,"media-tools").setSmallIcon(android.R.drawable.stat_sys_download).setContentTitle("Flux media tools")
+        val notice=NotificationCompat.Builder(applicationContext,"media-tools").setSmallIcon(R.drawable.ic_notice_wait).setContentTitle("Flux media tools")
             .setContentText(title).setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true).setProgress(0,0,true).addAction(android.R.drawable.ic_delete,"Cancel",cancel).build()
         return if(Build.VERSION.SDK_INT>=29)ForegroundInfo(710024,notice,ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC) else ForegroundInfo(710024,notice)
     }
