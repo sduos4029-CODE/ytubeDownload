@@ -385,8 +385,22 @@ class RuntimeChecks : Instrumentation() {
                     click("Edit clip 1")
                     val savedLabel=editLabel(uiAutomation.rootInActiveWindow) ?: error("Saved clip range unavailable")
                     val savedBoundary=savedLabel.substringAfter(" → ").toDouble()
-                    val editCursor=pointer(uiAutomation.rootInActiveWindow) ?: error("Edit pointer unavailable")
-                    check(editCursor.performAction(android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS.id,Bundle().apply {
+                    var editCursor=pointer(uiAutomation.rootInActiveWindow)
+                    var seekForward=true
+                    val editPointerDeadline=System.currentTimeMillis()+15000
+                    while(editCursor==null && System.currentTimeMillis()<editPointerDeadline) {
+                        fun area(node:android.view.accessibility.AccessibilityNodeInfo?):android.view.accessibility.AccessibilityNodeInfo? {
+                            if(node==null)return null
+                            if(node.isScrollable && node.rangeInfo==null)return node
+                            for(i in 0 until node.childCount){val found=area(node.getChild(i));if(found!=null)return found}
+                            return null
+                        }
+                        val action=if(seekForward)android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD else android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+                        if(area(uiAutomation.rootInActiveWindow)?.performAction(action)!=true)seekForward=!seekForward
+                        Thread.sleep(200);editCursor=pointer(uiAutomation.rootInActiveWindow)
+                    }
+                    check(editCursor!=null){"Edit pointer unavailable after scrolling"}
+                    check(editCursor!!.performAction(android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS.id,Bundle().apply {
                         putFloat(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_PROGRESS_VALUE,1f)
                     }))
                     Thread.sleep(700);click("Set end here");click("Cancel clip edit")
