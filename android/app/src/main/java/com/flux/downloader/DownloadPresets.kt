@@ -25,18 +25,20 @@ object DownloadPresets {
         default.value=runCatching{DownloadPreset.valueOf(prefs.getString("default","Best")!!)}.getOrDefault(DownloadPreset.Best)
     }
     fun set(value:DownloadPreset) {
-        check(prefs.edit().putString("default",value.name).commit());default.value=value
+        check(prefs.edit().putString("default",value.name).commit());default.value=value;NamedPresets.setDefault("")
     }
 }
 @Composable
 fun DownloadPresetSettingsCard() {
     val preset by DownloadPresets.default.collectAsState()
+    val named by NamedPresets.default.collectAsState()
     ElevatedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
             Text("Default download preset",style=MaterialTheme.typography.titleMedium)
-            Text("Starting quality for single-video downloads. Review and change formats before saving.",style=MaterialTheme.typography.bodySmall)
-            DownloadPreset.entries.forEach {option->FilterChip(selected=preset==option,onClick={DownloadPresets.set(option)},label={Text(option.label)})}
-            Text("Uses source formats without upscaling. Playlist batches keep their existing best-available selection.",style=MaterialTheme.typography.bodySmall)
+            Text("Starting quality for videos and playlist batches. Review formats before saving.",style=MaterialTheme.typography.bodySmall)
+            DownloadPreset.entries.forEach {option->FilterChip(selected=preset==option && named==null,onClick={DownloadPresets.set(option)},label={Text(option.label)})}
+            Text("Uses source formats without upscaling. Playlist batches can use stock or named presets.",style=MaterialTheme.typography.bodySmall)
+            NamedPresetSettings()
         }
     }
 }

@@ -28,6 +28,8 @@ fun QueuePage(jobs: List<Download>) {
     val transfers by Store.transfers.collectAsState()
     val onWifi by NetworkGate.wifi.collectAsState()
     val colors = MaterialTheme.colorScheme
+    var scheduleIds by remember {mutableStateOf<Set<String>?>(null)}
+    scheduleIds?.let {ids->QueueScheduleDialog(jobs,ids) {scheduleIds=null}}
     var confirmCancel by remember { mutableStateOf(false) }
     val ordered = jobs.sortedWith(compareBy<Download> { when (it.state) {
         in QueueRules.busyStates -> 0; "Queued", "Retrying" -> 1; else -> 3
@@ -47,6 +49,7 @@ fun QueuePage(jobs: List<Download>) {
                 }
                 OutlinedButton(onClick = { confirmCancel = true }, contentPadding = PaddingValues(horizontal = 14.dp)) { Text("Cancel all") }
             }
+            if(jobs.any(QueueSchedules::eligible))TextButton(onClick={scheduleIds=emptySet()}) {Text("Manage schedules")}
             Text("Resume depends on the source. Some streams restart; temporary network errors retry up to three times.",
                 color = colors.onSurfaceVariant, fontSize = 11.sp, lineHeight = 16.sp, modifier = Modifier.padding(top = 12.dp))
             Text("Eligible High priority items start first; current transfers continue. Download next raises an item to High. Speed cap per download: ${DownloadLimits.label(transfers.rateKiB)}.",color=colors.onSurfaceVariant,fontSize=11.sp,modifier=Modifier.padding(top=8.dp))
@@ -86,11 +89,14 @@ fun QueuePage(jobs: List<Download>) {
                     ProgressPanel(job)
                     if(job.isLocalEdit)Text("Local export · pause/interruption restarts this edit; original stays unchanged.",fontSize=10.sp,color=colors.onSurfaceVariant)
                     Text(job.detail, color = colors.onSurfaceVariant, fontSize = 11.sp, lineHeight = 16.sp, modifier = Modifier.padding(top = 10.dp))
-                    if(job.state in QueueRules.runnableStates+setOf("Paused"))Box {
+                    if(job.state in QueueRules.runnableStates+setOf("Paused"))Row(verticalAlignment=Alignment.CenterVertically) {
+                        Box {
                         TextButton(onClick={priorityMenu=true},modifier=Modifier.semantics{contentDescription="Priority for ${job.title}"}){Text("${listOf("Low","Normal","High")[job.priority.coerceIn(0,2)]} priority")}
                         DropdownMenu(expanded=priorityMenu,onDismissRequest={priorityMenu=false}) {
                             listOf("Low","Normal","High").forEachIndexed {value,label->DropdownMenuItem(text={Text("$label priority")},onClick={Downloads.priority(context,job,value);priorityMenu=false})}
                         }
+                        }
+                        if(QueueSchedules.eligible(job))TextButton(onClick={scheduleIds=setOf(job.id)}) {Text("Schedule")}
                     }
                     if (job.audioDescription.isNotBlank()) Text("Audio: ${job.audioDescription}", color = colors.secondary,
                         fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 7.dp))
