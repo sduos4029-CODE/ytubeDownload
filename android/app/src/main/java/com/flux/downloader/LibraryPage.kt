@@ -264,7 +264,8 @@ private fun LibraryCard(job: Download, prefs: LibraryPreferences, onRetry: (Down
         }
     }
     fun open() {
-        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(job.uri), job.mime)
+        runCatching { context.startActivity(if(!job.audioOnly && !job.isPhoto)
+            PlaybackActivity.intent(context,job.id) else Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(job.uri), job.mime)
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }
             .onFailure { Toast.makeText(context, "No compatible viewer, or the file was moved. Open your download folder.", Toast.LENGTH_LONG).show() }
     }

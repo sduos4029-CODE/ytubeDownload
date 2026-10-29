@@ -19,6 +19,7 @@ import java.util.concurrent.Executors
 
 /** Real-device integration checks. Media is generated locally; no third-party video is downloaded. */
 class RuntimeChecks : Instrumentation() {
+    private var playbackUiOnly=false
     private var v3Only=false
     private var v3RestartOnly=false
     private var v3UiOnly=false
@@ -68,6 +69,7 @@ class RuntimeChecks : Instrumentation() {
     private var restartOnly = false
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
+        playbackUiOnly=arguments?.getString("playbackUiOnly")=="true"
         v3Only=arguments?.getString("v3Only")=="true";v3RestartOnly=arguments?.getString("v3RestartOnly")=="true";v3UiOnly=arguments?.getString("v3UiOnly")=="true"
         mediaToolsOnly=arguments?.getString("mediaToolsOnly")=="true"
         mediaToolsRestartOnly=arguments?.getString("mediaToolsRestartOnly")=="true"
@@ -241,7 +243,7 @@ class RuntimeChecks : Instrumentation() {
             val activity = startActivitySync(Intent(targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
             check(!activity.isFinishing) { "Activity did not launch" }
             report("PASS: APK installs and MainActivity launches")
-            if (v3UiOnly || mediaToolsUiOnly || upgradeUiOnly || serverUiOnly || uiOnly || queueUiOnly || transferUiOnly || libraryUiOnly || progressUiOnly || favouritesUiOnly || repeatUiOnly || libraryToolsUiOnly || platformUiOnly || galleryUiOnly || sessionUiOnly) {
+            if (playbackUiOnly || v3UiOnly || mediaToolsUiOnly || upgradeUiOnly || serverUiOnly || uiOnly || queueUiOnly || transferUiOnly || libraryUiOnly || progressUiOnly || favouritesUiOnly || repeatUiOnly || libraryToolsUiOnly || platformUiOnly || galleryUiOnly || sessionUiOnly) {
                 // UI scenarios own synthetic job states. Drain WorkManager,
                 // including requests restored after a force-stop, first.
                 Store.setQueuePaused(true)
@@ -285,6 +287,10 @@ class RuntimeChecks : Instrumentation() {
                         return (0 until node.childCount).any {find(node.getChild(it))}
                     }
                     return find(uiAutomation.rootInActiveWindow)
+                }
+                if(playbackUiOnly) {
+                    PlaybackChecks(this@RuntimeChecks,::report).run(::click,::visible)
+                    result.putString("stream","PLAYBACK UI CHECKS PASSED\n");finish(Activity.RESULT_OK,result);return
                 }
                 if(v3UiOnly) {
                     fun field(label:String,value:String) {

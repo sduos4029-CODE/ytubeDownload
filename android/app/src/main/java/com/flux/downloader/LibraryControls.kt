@@ -15,7 +15,7 @@ import androidx.compose.ui.unit.sp
 fun libraryFilterCount(query:String,kind:String,favourites:Boolean,status:LibraryStatus,collection:String)=
     listOf(query.isNotBlank(),kind!="All",favourites,status!=LibraryStatus.All,collection.isNotBlank()).count {it}
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun LibraryOptionsSheet(prefs:LibraryPreferences,favourites:Boolean,status:LibraryStatus,count:Int,
     onFavourites:(Boolean)->Unit,onStatus:(LibraryStatus)->Unit,onClear:()->Unit,onDone:()->Unit,
@@ -46,7 +46,7 @@ fun LibraryOptionsSheet(prefs:LibraryPreferences,favourites:Boolean,status:Libra
                 }
             }
             Text("Item size",style=MaterialTheme.typography.labelLarge)
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+            FlowRow(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                 FilterChip(selected=prefs.layout==LibraryLayout.Compact,onClick={Store.setLibrary(prefs.copy(layout=LibraryLayout.Compact))},label={Text("Compact",fontSize=12.sp)})
                 LibrarySize.entries.forEach {size->
                     FilterChip(selected=prefs.layout!=LibraryLayout.Compact && prefs.size==size,

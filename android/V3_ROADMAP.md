@@ -44,3 +44,5 @@ Target: 40 accepted features/enhancements. Preview releases implement and verify
 | 38 | Subtitles, speed, gestures and resume position in the player | Last stage |
 | 39 | Picture-in-picture playback | Last stage |
 | 40 | Background audio and lock-screen controls | Last stage |
+
+Preview2 adds the explicitly requested initial saved-video player/gestures ahead of the previous player-last ordering. Item37 is partial; advanced player work, subtitles, PiP and background audio remain incomplete. Items1–5 stay implemented; 35 roadmap items remain incomplete (one partial,34 planned). See UPGRADE_3.0.0-preview.2.md.
