@@ -14,6 +14,8 @@ import android.widget.VideoView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
@@ -45,11 +47,11 @@ class PlaybackActivity:ComponentActivity() {
     override fun onCreate(savedInstanceState:Bundle?) {
         super.onCreate(savedInstanceState);volumeControlStream=AudioManager.STREAM_MUSIC;Store.init(this)
         val job=Store.downloads.value.firstOrNull {it.id==intent.getStringExtra("download_id") && it.state=="Complete" && !it.audioOnly && !it.isPhoto && it.uri.startsWith("content://")}
-        setContent {MaterialTheme(colorScheme=darkColorScheme(primary=Color(0xFFBAACFF),secondary=Color(0xFF85E5C4))) {
+        setContent {MaterialTheme(colorScheme=darkColorScheme(primary=Color(0xFFBAACFF),secondary=Color(0xFF85E5C4))) {Surface(Modifier.fillMaxSize()) {
             if(job==null)Column(Modifier.fillMaxSize().safeDrawingPadding().padding(24.dp)) {
                 Text("This saved video is no longer available.");Button(onClick={finish()}){Text("Close player")}
             } else SavedVideoPlayer(this,job)
-        }}
+        }}}
     }
 }
 internal object PlaybackControls {
@@ -177,7 +179,10 @@ private fun SavedVideoPlayer(activity:PlaybackActivity,job:Download) {
         }
         Surface(color=Color(0xFF171822)){
             Column(Modifier.padding(horizontal=16.dp,vertical=8.dp)){
-                if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)
+                if(error.isNotBlank()) {
+                    Text(error,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)
+                    TextButton(onClick=::external){Text("Open in another app")}
+                }
                 Text("${PlaybackControls.time(position)} / ${PlaybackControls.time(duration)}",style=MaterialTheme.typography.labelMedium)
                 Slider(value=position.toFloat().coerceIn(0f,duration.coerceAtLeast(1).toFloat()),valueRange=0f..duration.coerceAtLeast(1).toFloat(),enabled=ready,modifier=Modifier.semantics{contentDescription="Video position"},
                     onValueChange={if(!scrubbing){resumeScrub=view.isPlaying;pause();scrubbing=true};position=it.toLong()},onValueChangeFinished={
@@ -189,18 +194,18 @@ private fun SavedVideoPlayer(activity:PlaybackActivity,job:Download) {
                     FilledIconButton(enabled=ready,onClick=::toggle,modifier=Modifier.padding(horizontal=24.dp)){Icon(if(playing)Icons.Rounded.Pause else Icons.Rounded.PlayArrow,if(playing)"Pause video" else "Play video")}
                     IconButton(enabled=ready,onClick={seek(PlaybackControls.SEEK_MS)}){Icon(Icons.Rounded.Forward10,"Forward 10 seconds")}
                 }
-                TextButton(onClick=::external,modifier=Modifier.align(Alignment.CenterHorizontally)){Text("Open in another app")}
             }
         }
     }
     if(settings)ModalBottomSheet(onDismissRequest={settings=false},sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)){
-        Column(Modifier.fillMaxWidth().padding(24.dp).navigationBarsPadding()){
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp).navigationBarsPadding()){
             Text("Playback controls",style=MaterialTheme.typography.titleLarge)
             Text("Volume ${(volume*100).roundToInt()}%")
             Slider(value=volume,onValueChange=::setVolume,modifier=Modifier.semantics{contentDescription="Playback volume"})
             Text("Brightness ${(brightness*100).roundToInt()}%")
             Slider(value=brightness,valueRange=.05f..1f,onValueChange=::setBrightness,modifier=Modifier.semantics{contentDescription="Playback brightness"})
             Text("Swipe up/down on the right for volume, on the left for brightness. Double-tap right to go forward 10 seconds; double-tap left to go back. Brightness changes apply only to this player window.",style=MaterialTheme.typography.bodySmall)
+            TextButton(onClick={settings=false;external()}){Text("Open in another app")}
             Button(onClick={settings=false},modifier=Modifier.fillMaxWidth().padding(top=16.dp)){Text("Done with playback settings")}
         }
     }
