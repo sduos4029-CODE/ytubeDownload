@@ -156,7 +156,7 @@ private fun FluxApp(shared: String, model: FluxModel = viewModel()) {
                 Text("flux", Modifier.padding(start = 9.dp), fontSize = 29.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-1).sp)
                 Spacer(Modifier.weight(1f))
                 Surface(color = Mint.copy(alpha = .09f), shape = CircleShape) {
-                    Text(if(BuildConfig.VERSION_NAME.contains("-preview."))"3.0 PREVIEW 1" else "YOUR OFFLINE SPACE", color = Mint, fontSize = 9.sp, letterSpacing = 1.sp,
+                    Text(if(BuildConfig.VERSION_NAME.contains("-preview."))"3.0 PREVIEW ${BuildConfig.VERSION_NAME.substringAfterLast('.')}" else "YOUR OFFLINE SPACE", color = Mint, fontSize = 9.sp, letterSpacing = 1.sp,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
                 }
             }
